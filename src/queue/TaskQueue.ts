@@ -1,5 +1,6 @@
 import type { TaskDefinition, TaskMode } from "../config/types.js";
 import type { MacaiDatabase, TaskRecord } from "../persistence/Database.js";
+import { generateTaskId } from "./taskId.js";
 
 export class TaskQueue {
   constructor(
@@ -11,7 +12,7 @@ export class TaskQueue {
     const records: TaskRecord[] = [];
 
     tasks.forEach((task, index) => {
-      const id = `task-${String(index + 1).padStart(3, "0")}`;
+      const id = generateTaskId(this.runId, index, task.title);
       const mode: TaskMode = task.mode ?? "coding";
       const priority = task.priority ?? 10 - index;
 

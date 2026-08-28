@@ -26,17 +26,18 @@ describe("WorktreeManager", () => {
   });
 
   it("creates isolated worktree and branch", () => {
-    const macaiDir = path.join(repoPath, ".macai", "tasks", "task-001");
+    const taskId = "a1b2c3d4e5f67890";
+    const macaiDir = path.join(repoPath, ".macai", "tasks", taskId);
     fs.mkdirSync(macaiDir, { recursive: true });
 
     const manager = new WorktreeManager(repoPath);
-    const info = manager.createWorktree("task-001");
+    const info = manager.createWorktree(taskId);
 
     expect(fs.existsSync(info.worktreePath)).toBe(true);
-    expect(info.branch).toBe("macai/task-001");
+    expect(info.branch).toBe(`macai/${taskId}`);
 
     const status = manager.getWorktreeStatus(info.worktreePath);
     expect(status.clean).toBe(true);
-    expect(status.branch).toBe("macai/task-001");
+    expect(status.branch).toBe(`macai/${taskId}`);
   });
 });

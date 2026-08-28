@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AppConfig, JobStartOptions, StartOptions, TaskDefinition } from "../config/types.js";
+import type { AppConfig, DetectedRepo, JobStartOptions, StartOptions, TaskDefinition } from "../config/types.js";
 import {
   ensureMacaiDir,
   ensureTaskDir,
@@ -17,6 +17,7 @@ import { RepoDetector, runTestCommand, getTestCommand } from "../repo/RepoDetect
 import { AgentController } from "../agent/AgentController.js";
 import { TaskQueue } from "./TaskQueue.js";
 import { Scheduler } from "./Scheduler.js";
+import { RunLock } from "./RunLock.js";
 import { ReportGenerator } from "../reporting/ReportGenerator.js";
 
 export interface JobManagerOptions extends JobStartOptions {}
@@ -25,7 +26,7 @@ export class JobManager {
   private db!: MacaiDatabase;
   private repoPath: string;
   private runId: string;
-  private scheduler: Scheduler;
+  private scheduler!: Scheduler;
   private config: AppConfig;
 
   constructor(private options: JobManagerOptions) {
@@ -44,17 +45,38 @@ export class JobManager {
     this.config.repo = { ...detected.commands, ...this.config.repo };
 
     const projectId = this.db.getOrCreateProject(this.repoPath, detected.commands);
-    const existingRun = this.db.getRunningRun(projectId);
-    if (existingRun) {
-      console.log(`Resuming or conflicting run detected: ${existingRun.id}`);
+    this.registerRun(projectId);
+
+    const lock = new RunLock(this.repoPath);
+    if (!lock.tryAcquire(this.runId)) {
+      const activeRunId = lock.getActiveRunId();
+      const position = this.db.getQueuedRunPosition(this.runId, projectId);
+      const waiting = this.db.getQueuedRuns(projectId).length;
+      console.log(`\nRun ${this.runId} queued for ${this.repoPath}`);
+      console.log(`Queue position: ${position} of ${waiting} waiting run(s)`);
+      if (activeRunId) {
+        console.log(`Active run: ${activeRunId}`);
+      }
+      console.log("Tasks will execute when the current run finishes.\n");
+      this.db.close();
+      return;
     }
 
-    const ollama = new OllamaClient(this.config.ollama);
-    const health = await ollama.healthCheck();
-    if (!health.ok) {
-      throw new Error(`Ollama health check failed: ${health.error}`);
-    }
+    try {
+      const ollama = new OllamaClient(this.config.ollama);
+      const health = await ollama.healthCheck();
+      if (!health.ok) {
+        throw new Error(`Ollama health check failed: ${health.error}`);
+      }
 
+      await this.drainRunQueue(projectId, ollama, detected);
+    } finally {
+      lock.release();
+      this.db.close();
+    }
+  }
+
+  private registerRun(projectId: number): void {
     this.db.createRun({
       id: this.runId,
       projectId,
@@ -62,27 +84,65 @@ export class JobManager {
       ollamaUrl: this.config.ollama.baseUrl,
       maxRuntimeHours: this.options.hours,
       stopUntil: this.options.until,
+      status: "queued",
     });
 
-    const taskDefs =
-      this.options.taskDefinitions ??
-      (this.options.tasks ? loadTasksFile(this.options.tasks) : []);
-
+    const taskDefs = this.getTaskDefinitions();
     if (taskDefs.length === 0) {
       throw new Error("No tasks provided");
     }
 
     const queue = new TaskQueue(this.db, this.runId);
     queue.enqueueAll(taskDefs);
+  }
 
+  private getTaskDefinitions(): TaskDefinition[] {
+    return (
+      this.options.taskDefinitions ??
+      (this.options.tasks ? loadTasksFile(this.options.tasks) : [])
+    );
+  }
+
+  private async drainRunQueue(
+    projectId: number,
+    ollama: OllamaClient,
+    detected: DetectedRepo,
+  ): Promise<void> {
+    let nextRunId: string | undefined = this.runId;
+
+    while (nextRunId) {
+      if (!this.db.tryClaimRun(nextRunId, projectId)) {
+        break;
+      }
+
+      this.runId = nextRunId;
+      const run = this.db.getRun(nextRunId);
+      this.scheduler = new Scheduler({
+        hours: run?.max_runtime_hours ?? this.options.hours,
+        until: run?.stop_until ?? this.options.until,
+      });
+
+      await this.executeRun(ollama, detected);
+
+      const queued = this.db.getNextQueuedRun(projectId);
+      nextRunId = queued?.id;
+      if (nextRunId) {
+        console.log(`\nStarting queued run ${nextRunId}...`);
+      }
+    }
+  }
+
+  private async executeRun(ollama: OllamaClient, detected: DetectedRepo): Promise<void> {
+    const queue = new TaskQueue(this.db, this.runId);
     const worktreeManager = new WorktreeManager(this.repoPath);
     const baseBranch = this.options.baseBranch ?? worktreeManager.getCurrentBranch();
 
+    const testCmd = getTestCommand(this.config, detected);
     let baselinePassed: number | null = null;
     let baselineFailed: number | null = null;
-    const testCmd = getTestCommand(this.config, detected);
+
     if (testCmd) {
-      const baselinePath = path.join(ensureMacaiDir(this.repoPath), "baseline-tests.log");
+      const baselinePath = path.join(ensureMacaiDir(this.repoPath), `baseline-${this.runId}.log`);
       const baseline = await runTestCommand(
         testCmd,
         this.repoPath,
@@ -105,10 +165,11 @@ export class JobManager {
     let resultPassed = baselinePassed;
     let resultFailed = baselineFailed;
 
+    const taskCount = queue.getAll().length;
     console.log(`\nmacai run ${this.runId} started`);
     console.log(`Repository: ${this.repoPath}`);
     console.log(`Model: ${this.config.ollama.model}`);
-    console.log(`Tasks: ${taskDefs.length}\n`);
+    console.log(`Tasks: ${taskCount}\n`);
 
     while (!this.scheduler.shouldStop()) {
       const task = queue.getNext();
@@ -219,8 +280,6 @@ export class JobManager {
     const reportPath = reporter.generateRunReport(this.runId);
     console.log(`\nRun finished. Report: ${reportPath}`);
     console.log(`Runtime: ${formatDuration(runtimeMs)}`);
-
-    this.db.close();
   }
 
   static async recoverIncomplete(repoPath: string): Promise<void> {
@@ -228,8 +287,12 @@ export class JobManager {
     if (!fs.existsSync(dbPath)) return;
 
     const db = new MacaiDatabase(dbPath);
+    const resolved = path.resolve(repoPath);
+    const projectId = db.getOrCreateProject(resolved);
+    db.finalizeInterruptedRuns(projectId);
+
     const incomplete = db.getIncompleteTasks();
-    const worktreeManager = new WorktreeManager(repoPath);
+    const worktreeManager = new WorktreeManager(resolved);
 
     for (const task of incomplete) {
       if (!task.worktree_path) {
@@ -251,6 +314,7 @@ export class JobManager {
       });
     }
 
+    new RunLock(resolved).releaseIfStale();
     db.close();
   }
 }

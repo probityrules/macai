@@ -19,23 +19,29 @@ npm link   # optional: install `macai` CLI globally
 
 ## Quick Start
 
+From inside your project directory ( `--repo` defaults to the current folder):
+
 ```bash
 # Check environment
-macai doctor --repo ./my-project
+macai doctor
 
 # Option A: explicit task file
-macai start --repo ./my-project --tasks tasks.yaml --hours 8
+macai start --tasks tasks.yaml --hours 8
 
 # Option B: natural-language prompt (generates tasks.yaml, then runs)
-macai prompt --repo ./my-project "Add parser tests, review TODOs in src/, and improve API error handling."
+macai prompt "Add parser tests, review TODOs in src/, and improve API error handling."
 
 # Preview generated plan without running
-macai prompt --repo ./my-project --dry-run "Add tests for the transcript parser"
+macai prompt --dry-run "Add tests for the transcript parser"
 
 # Morning review
-macai status --repo ./my-project
-macai report --repo ./my-project
+macai status
+macai report
 ```
+
+If a run is already active on the repo, additional `macai start` or `macai prompt` invocations are **queued** and run sequentially when the current run finishes. Different repos can run concurrently without interfering with each other.
+
+Task IDs are content hashes, so each task gets a unique worktree under `.macai/tasks/<hash>/` and branch `macai/<hash>`.
 
 Generated prompt plans are saved under `.macai/generated/<timestamp>/` as `tasks.yaml`, `run-plan.json`, and `prompt.txt`.
 
@@ -54,7 +60,7 @@ All run artifacts live in `<repo>/.macai/`:
         └── report.md
 ```
 
-Branches are created as `macai/task-001`, etc. Your primary working tree is never modified.
+Branches are created as `macai/<task-hash>`, etc. Your primary working tree is never modified.
 
 ## Configuration
 

@@ -29,11 +29,13 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const RunStatusSchema = z.enum([
   "pending",
+  "queued",
   "running",
   "completed",
   "cancelled",
   "timed_out",
   "failed",
+  "interrupted",
 ]);
 
 export type RunStatus = z.infer<typeof RunStatusSchema>;

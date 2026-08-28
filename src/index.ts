@@ -2,7 +2,6 @@
 
 import { Command } from "commander";
 import fs from "node:fs";
-import path from "node:path";
 import {
   getMacaiDbPath,
   getMacaiDir,
@@ -15,6 +14,9 @@ import { WorktreeManager } from "./git/WorktreeManager.js";
 import { ReportGenerator } from "./reporting/ReportGenerator.js";
 import { runMacaiStart } from "./cli/runStart.js";
 import { runPromptCommand } from "./cli/promptCommand.js";
+import { resolveRepo } from "./cli/repoOption.js";
+
+const DEFAULT_REPO = process.cwd();
 
 const program = new Command();
 
@@ -26,7 +28,7 @@ program
 program
   .command("start")
   .description("Start an autonomous coding run")
-  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .option("--tasks <file>", "YAML file with task definitions")
   .option("--config <file>", "Config file path")
   .option("--model <name>", "Ollama model name", "qwen3-coder:latest")
@@ -37,7 +39,7 @@ program
   .action(async (opts) => {
     try {
       await runMacaiStart({
-        repo: opts.repo,
+        repo: resolveRepo(opts.repo),
         tasks: opts.tasks,
         config: opts.config,
         model: opts.model,
@@ -56,7 +58,7 @@ program
   .command("prompt")
   .description("Plan and start a run from a natural-language prompt")
   .argument("[text]", "What macai should work on")
-  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .option("-p, --prompt <text>", "Prompt text (alternative to argument)")
   .option("--prompt-file <file>", "Read prompt from a file")
   .option("--config <file>", "Config file path")
@@ -70,7 +72,7 @@ program
   .action(async (text, opts) => {
     try {
       await runPromptCommand({
-        repo: opts.repo,
+        repo: resolveRepo(opts.repo),
         prompt: opts.prompt ?? text,
         promptFile: opts.promptFile,
         config: opts.config,
@@ -91,17 +93,19 @@ program
 program
   .command("status")
   .description("Show current or last run status")
-  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .action((opts) => {
-    const dbPath = getMacaiDbPath(opts.repo);
+    const repo = resolveRepo(opts.repo);
+    const dbPath = getMacaiDbPath(repo);
     if (!fs.existsSync(dbPath)) {
       console.log("No macai runs found.");
       return;
     }
 
     const db = new MacaiDatabase(dbPath);
-    const projectId = db.getOrCreateProject(opts.repo);
-    const run = db.getRunningRun(projectId) ?? db.getLatestRun(projectId);
+    const projectId = db.getOrCreateProject(repo);
+    const running = db.getRunningRun(projectId);
+    const run = running ?? db.getLatestRun(projectId);
 
     if (!run) {
       console.log("No runs found.");
@@ -109,8 +113,11 @@ program
       return;
     }
 
+    const queued = db.getQueuedRuns(projectId);
+
     console.log("\nmacai Run Status");
     console.log("────────────────────");
+    console.log(`Repository: ${repo}`);
     console.log(`Run ID:     ${run.id}`);
     console.log(`Status:     ${run.status}`);
     console.log(`Model:      ${run.model}`);
@@ -118,6 +125,9 @@ program
     console.log(`Completed:  ${run.tasks_completed}`);
     console.log(`Failed:     ${run.tasks_failed}`);
     console.log(`Commits:    ${run.commits_created}`);
+    if (queued.length > 0) {
+      console.log(`Queued:     ${queued.length} run(s) waiting`);
+    }
     if (run.runtime_ms) {
       console.log(`Runtime:    ${Math.floor(run.runtime_ms / 1000)}s`);
     }
@@ -140,16 +150,17 @@ const tasksCmd = program.command("tasks").description("Manage tasks");
 tasksCmd
   .command("list")
   .description("List tasks from the latest run")
-  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .action((opts) => {
-    const dbPath = getMacaiDbPath(opts.repo);
+    const repo = resolveRepo(opts.repo);
+    const dbPath = getMacaiDbPath(repo);
     if (!fs.existsSync(dbPath)) {
       console.log("No tasks found.");
       return;
     }
 
     const db = new MacaiDatabase(dbPath);
-    const projectId = db.getOrCreateProject(opts.repo);
+    const projectId = db.getOrCreateProject(repo);
     const run = db.getLatestRun(projectId);
     if (!run) {
       console.log("No runs found.");
@@ -175,17 +186,18 @@ program
 program
   .command("report")
   .description("Generate or print the run report")
-  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .option("--run <id>", "Run ID (defaults to latest)")
   .action((opts) => {
-    const dbPath = getMacaiDbPath(opts.repo);
+    const repo = resolveRepo(opts.repo);
+    const dbPath = getMacaiDbPath(repo);
     if (!fs.existsSync(dbPath)) {
       console.log("No report available.");
       return;
     }
 
     const db = new MacaiDatabase(dbPath);
-    const projectId = db.getOrCreateProject(opts.repo);
+    const projectId = db.getOrCreateProject(repo);
     const runId = opts.run ?? db.getLatestRun(projectId)?.id;
     if (!runId) {
       console.log("No runs found.");
@@ -193,7 +205,7 @@ program
       return;
     }
 
-    const reporter = new ReportGenerator(db, opts.repo);
+    const reporter = new ReportGenerator(db, repo);
     const reportPath = reporter.generateRunReport(runId);
     console.log(fs.readFileSync(reportPath, "utf8"));
     db.close();
@@ -202,12 +214,14 @@ program
 program
   .command("doctor")
   .description("Check Ollama, git, and model availability")
-  .option("--repo <path>", "Path to verify git repository")
+  .option("--repo <path>", "Path to verify git repository", DEFAULT_REPO)
   .option("--ollama-url <url>", "Ollama base URL", "http://10.0.0.29:11434")
   .option("--model <name>", "Model to check", "qwen3-coder:latest")
   .action(async (opts) => {
     console.log("\nmacai Doctor");
     console.log("────────────────");
+
+    const repo = resolveRepo(opts.repo);
 
     const config = mergeConfig(loadConfig(), {
       model: opts.model,
@@ -226,20 +240,18 @@ program
       }
     }
 
-    if (opts.repo) {
-      try {
-        const wt = new WorktreeManager(opts.repo);
-        const branch = wt.getCurrentBranch();
-        const clean = wt.isWorkingTreeClean();
-        console.log(`✓ Git repository: ${path.resolve(opts.repo)}`);
-        console.log(`  Branch: ${branch}, ${clean ? "clean" : "dirty"}`);
-      } catch (err) {
-        console.log(`✗ Git: ${err instanceof Error ? err.message : err}`);
-      }
+    try {
+      const wt = new WorktreeManager(repo);
+      const branch = wt.getCurrentBranch();
+      const clean = wt.isWorkingTreeClean();
+      console.log(`✓ Git repository: ${repo}`);
+      console.log(`  Branch: ${branch}, ${clean ? "clean" : "dirty"}`);
+    } catch (err) {
+      console.log(`✗ Git: ${err instanceof Error ? err.message : err}`);
     }
 
-    const macaiDir = opts.repo ? getMacaiDir(opts.repo) : null;
-    if (macaiDir && fs.existsSync(macaiDir)) {
+    const macaiDir = getMacaiDir(repo);
+    if (fs.existsSync(macaiDir)) {
       console.log(`✓ macai data dir exists: ${macaiDir}`);
     }
 

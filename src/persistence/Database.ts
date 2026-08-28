@@ -116,20 +116,82 @@ export class MacaiDatabase {
     ollamaUrl: string;
     maxRuntimeHours?: number;
     stopUntil?: string;
+    status?: RunStatus;
   }): void {
+    const status = data.status ?? "queued";
     this.db
       .prepare(
         `INSERT INTO runs (id, project_id, status, started_at, model, ollama_url, max_runtime_hours, stop_until)
-         VALUES (?, ?, 'running', datetime('now'), ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         data.id,
         data.projectId,
+        status,
+        status === "running" ? new Date().toISOString() : null,
         data.model,
         data.ollamaUrl,
         data.maxRuntimeHours ?? null,
         data.stopUntil ?? null,
       );
+  }
+
+  tryClaimRun(runId: string, projectId: number): boolean {
+    const active = this.getRunningRun(projectId);
+    if (active && active.id !== runId) {
+      return false;
+    }
+
+    const result = this.db
+      .prepare(
+        `UPDATE runs SET status = 'running', started_at = COALESCE(started_at, datetime('now'))
+         WHERE id = ? AND project_id = ? AND status = 'queued'`,
+      )
+      .run(runId, projectId);
+
+    return result.changes > 0;
+  }
+
+  getNextQueuedRun(projectId: number): RunRecord | undefined {
+    return this.db
+      .prepare(
+        `SELECT * FROM runs WHERE project_id = ? AND status = 'queued'
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(projectId) as RunRecord | undefined;
+  }
+
+  getQueuedRuns(projectId: number): RunRecord[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM runs WHERE project_id = ? AND status = 'queued' ORDER BY created_at ASC`,
+      )
+      .all(projectId) as RunRecord[];
+  }
+
+  getQueuedRunPosition(runId: string, projectId: number): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as position FROM runs
+         WHERE project_id = ? AND status = 'queued' AND created_at <= (
+           SELECT created_at FROM runs WHERE id = ?
+         )`,
+      )
+      .get(projectId, runId) as { position: number };
+    return row.position;
+  }
+
+  finalizeInterruptedRuns(projectId: number): void {
+    this.db
+      .prepare(
+        `UPDATE runs SET status = 'interrupted', ended_at = datetime('now')
+         WHERE project_id = ? AND status = 'running'`,
+      )
+      .run(projectId);
+  }
+
+  getActiveRun(projectId: number): RunRecord | undefined {
+    return this.getRunningRun(projectId) ?? this.getNextQueuedRun(projectId);
   }
 
   updateRun(id: string, updates: Partial<RunRecord>): void {
