@@ -133,6 +133,13 @@ export class ReportGenerator {
     head_commit: string | null;
     failure_reason: string | null;
   }): string {
+    const taskDir = path.join(getMacaiDir(this.repoPath), "tasks", task.id);
+    const investigationPath = path.join(taskDir, "investigation-report.md");
+    const hasInvestigationReport =
+      (task.mode === "investigation" || task.mode === "review") &&
+      fs.existsSync(investigationPath) &&
+      fs.readFileSync(investigationPath, "utf8").trim().length > 0;
+
     return [
       `# Task Report: ${task.title}`,
       "",
@@ -142,6 +149,7 @@ export class ReportGenerator {
       task.branch ? `- Branch: ${task.branch}` : "",
       task.head_commit ? `- Commit: ${task.head_commit}` : "",
       task.failure_reason ? `- Failure: ${task.failure_reason}` : "",
+      hasInvestigationReport ? `- Investigation report: ${investigationPath}` : "",
       "",
     ]
       .filter(Boolean)

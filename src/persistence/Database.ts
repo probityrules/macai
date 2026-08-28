@@ -469,4 +469,16 @@ export class MacaiDatabase {
       message: string;
     }>;
   }
+
+  getToolCallsForTask(taskId: string): Array<{
+    tool_name: string;
+    result_preview: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT tool_name, result_preview FROM tool_calls
+         WHERE task_id = ? ORDER BY id ASC`,
+      )
+      .all(taskId) as Array<{ tool_name: string; result_preview: string | null }>;
+  }
 }

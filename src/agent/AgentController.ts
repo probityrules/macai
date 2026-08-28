@@ -10,6 +10,7 @@ import { isReadOnlyMode, nextPhase, statusForPhase } from "./AgentState.js";
 import { getSystemPrompt, shouldSkipPlanning } from "./prompts/system.js";
 import { Planner } from "./Planner.js";
 import { Reviewer } from "./Reviewer.js";
+import { InvestigationReporter } from "./InvestigationReporter.js";
 
 export interface AgentRunContext {
   config: AppConfig;
@@ -35,10 +36,12 @@ export interface AgentRunResult {
 export class AgentController {
   private planner: Planner;
   private reviewer: Reviewer;
+  private investigationReporter: InvestigationReporter;
 
   constructor(private ctx: AgentRunContext) {
     this.planner = new Planner(ctx.ollama);
     this.reviewer = new Reviewer(ctx.ollama);
+    this.investigationReporter = new InvestigationReporter(ctx.ollama);
   }
 
   async run(): Promise<AgentRunResult> {
@@ -114,15 +117,19 @@ export class AgentController {
             contextManager,
             toolRegistry,
             task,
-            phase,
+            task.mode === "investigation" ? "investigate" : phase,
             messages,
+            task.mode === "investigation" ? 10 : 15,
           );
           messages = workResult.messages;
           filesChanged = workResult.filesChanged;
 
-          if (readOnly && task.mode === "investigation") {
-            const report = workResult.lastResponse;
-            fs.writeFileSync(path.join(logDir, "investigation-report.md"), report, "utf8");
+          if (readOnly && (task.mode === "investigation" || task.mode === "review")) {
+            const report = await this.writeInvestigationReport(
+              task,
+              contextManager,
+              workResult.lastResponse,
+            );
             db.updateTask(task.id, {
               status: "completed",
               ended_at: new Date().toISOString(),
@@ -154,11 +161,16 @@ export class AgentController {
 
         if (phase === "review") {
           if (readOnly) {
+            const report = await this.writeInvestigationReport(task, contextManager);
             db.updateTask(task.id, {
               status: "completed",
               ended_at: new Date().toISOString(),
             });
-            return { success: true, filesChanged: [] };
+            return {
+              success: true,
+              filesChanged: [],
+              investigationReport: report,
+            };
           }
 
           const diff = gitExec(["diff", "--stat"], worktreePath);
@@ -239,7 +251,7 @@ export class AgentController {
     contextManager: ContextManager,
     toolRegistry: ToolRegistry,
     task: TaskRecord,
-    phase: AgentPhase,
+    phase: AgentPhase | "investigate",
     messages: OllamaMessage[],
     maxIterations = 15,
   ): Promise<{ messages: OllamaMessage[]; filesChanged: string[]; lastResponse: string }> {
@@ -254,6 +266,8 @@ export class AgentController {
       });
     }
 
+    const recordPhase: AgentPhase = phase === "investigate" ? "work" : phase;
+
     for (let i = 0; i < maxIterations; i++) {
       contextManager.incrementIteration();
 
@@ -267,7 +281,7 @@ export class AgentController {
 
       const iterationId = this.ctx.db.recordIteration({
         taskId: task.id,
-        phase,
+        phase: recordPhase,
         iterationNum: contextManager.getIteration(),
         promptSummary: messages.at(-1)?.content.slice(0, 200),
       });
@@ -278,7 +292,7 @@ export class AgentController {
 
       this.ctx.db.recordIteration({
         taskId: task.id,
-        phase,
+        phase: recordPhase,
         iterationNum: contextManager.getIteration(),
         responseSummary: lastResponse.slice(0, 300),
         promptTokens: response.prompt_eval_count,
@@ -366,6 +380,33 @@ export class AgentController {
     }
 
     return { passed: exitCode === 0, output };
+  }
+
+  private async writeInvestigationReport(
+    task: TaskRecord,
+    contextManager: ContextManager,
+    workSummary?: string,
+  ): Promise<string> {
+    const toolCalls = this.ctx.db.getToolCallsForTask(task.id);
+    const report = await this.investigationReporter.generate({
+      task,
+      state: contextManager.getState(),
+      toolCalls,
+      workSummary,
+    });
+
+    const reportPath = path.join(this.ctx.logDir, "investigation-report.md");
+    fs.writeFileSync(reportPath, report, "utf8");
+
+    this.ctx.db.recordObservation({
+      taskId: task.id,
+      kind: "investigation_report",
+      confidence: "high",
+      message: report.slice(0, 1000),
+    });
+
+    this.log(`Investigation report written (${report.length} chars)`);
+    return report;
   }
 
   private log(line: string): void {

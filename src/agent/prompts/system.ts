@@ -32,6 +32,10 @@ When done with a phase, respond with a brief summary of what you accomplished.`;
       "Phase: UNDERSTAND. Explore the repo structure, tests, conventions. Use read/search tools only.",
     plan: "Phase: PLAN. Create a numbered execution plan before editing.",
     work: "Phase: WORK. Implement changes using tools. Call run_tests after significant edits.",
+    investigate:
+      "Phase: INVESTIGATE. Use read/search tools to gather evidence. Do not modify files. Take notes on findings.",
+    report:
+      "Phase: REPORT. Synthesize findings into a clear markdown report with summary, evidence, and recommendations.",
     test: "Phase: TEST. Run tests and analyze failures. Fix issues or document pre-existing failures.",
     review: "Phase: REVIEW. Run git_diff and git_status. Verify changes relate to the task.",
     commit: "Phase: COMMIT. Create a commit with message format: macai: <title>",
@@ -71,4 +75,42 @@ export function parseReviewDecision(response: string): boolean {
 
 export function shouldSkipPlanning(description: string): boolean {
   return description.length < 120 && !description.includes("\n");
+}
+
+export function getInvestigationReportPrompt(data: {
+  title: string;
+  description: string;
+  mode: TaskMode;
+  plan?: string;
+  filesExamined: string[];
+  decisions: string[];
+  evidence: string;
+  workSummary?: string;
+}): string {
+  return `Write a markdown investigation report for this task.
+
+Title: ${data.title}
+Mode: ${data.mode}
+
+Task description:
+${data.description}
+
+${data.plan ? `Plan:\n${data.plan}\n` : ""}
+${data.filesExamined.length ? `Files examined:\n${data.filesExamined.join("\n")}\n` : ""}
+${data.decisions.length ? `Notes:\n${data.decisions.join("\n")}\n` : ""}
+${data.workSummary ? `Work phase summary:\n${data.workSummary}\n` : ""}
+
+Tool evidence gathered:
+${data.evidence}
+
+Use this structure:
+# Investigation Report: ${data.title}
+
+## Summary
+## Key Findings
+## Evidence
+## Recommendations
+## Suggested Follow-up
+
+Be specific. Reference files and observations from the evidence.`;
 }

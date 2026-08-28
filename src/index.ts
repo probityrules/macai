@@ -12,6 +12,7 @@ import { MacaiDatabase } from "./persistence/Database.js";
 import { OllamaClient } from "./ollama/OllamaClient.js";
 import { WorktreeManager } from "./git/WorktreeManager.js";
 import { ReportGenerator } from "./reporting/ReportGenerator.js";
+import { synthesizeInvestigationReport } from "./reporting/synthesizeInvestigationReport.js";
 import { runMacaiStart } from "./cli/runStart.js";
 import { runPromptCommand } from "./cli/promptCommand.js";
 import { resolveRepo } from "./cli/repoOption.js";
@@ -173,6 +174,41 @@ tasksCmd
       console.log(`${t.id}\t[${t.status}]\t${t.mode}\t${t.title}`);
     }
     db.close();
+  });
+
+tasksCmd
+  .command("synthesize-report")
+  .description("Regenerate investigation/review report from stored tool evidence")
+  .argument("<task-id>", "Task ID")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .option("--ollama-url <url>", "Ollama base URL")
+  .option("--model <name>", "Model to use")
+  .action(async (taskId: string, opts) => {
+    const repo = resolveRepo(opts.repo);
+    const dbPath = getMacaiDbPath(repo);
+    if (!fs.existsSync(dbPath)) {
+      console.error("No macai database found.");
+      process.exit(1);
+    }
+
+    const config = mergeConfig(loadConfig(), {
+      model: opts.model,
+      ollamaUrl: opts.ollamaUrl,
+    });
+    const db = new MacaiDatabase(dbPath);
+    const ollama = new OllamaClient(config.ollama);
+
+    try {
+      const reportPath = await synthesizeInvestigationReport(db, ollama, repo, taskId);
+      console.log(`Report written to ${reportPath}`);
+      console.log("");
+      console.log(fs.readFileSync(reportPath, "utf8"));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    } finally {
+      db.close();
+    }
   });
 
 program
