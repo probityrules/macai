@@ -23,20 +23,21 @@ npm link   # optional: install `macai` CLI globally
 # Check environment
 macai doctor --repo ./my-project
 
-# Create tasks.yaml (see templates/tasks.example.yaml)
+# Option A: explicit task file
+macai start --repo ./my-project --tasks tasks.yaml --hours 8
 
-# Start run
-macai start \
-  --repo ./my-project \
-  --model qwen3-coder:latest \
-  --ollama-url http://10.0.0.29:11434 \
-  --hours 8 \
-  --tasks tasks.yaml
+# Option B: natural-language prompt (generates tasks.yaml, then runs)
+macai prompt --repo ./my-project "Add parser tests, review TODOs in src/, and improve API error handling."
+
+# Preview generated plan without running
+macai prompt --repo ./my-project --dry-run "Add tests for the transcript parser"
 
 # Morning review
 macai status --repo ./my-project
 macai report --repo ./my-project
 ```
+
+Generated prompt plans are saved under `.macai/generated/<timestamp>/` as `tasks.yaml`, `run-plan.json`, and `prompt.txt`.
 
 ## Output
 
@@ -63,7 +64,8 @@ Copy `macai.config.example.yaml` and customize limits, shell allowlists, and rep
 
 | Command | Description |
 |---------|-------------|
-| `macai start` | Begin run |
+| `macai start` | Begin run from tasks.yaml |
+| `macai prompt` | Plan from natural language, then run |
 | `macai status` | Show run status |
 | `macai tasks list` | List tasks |
 | `macai report` | Generate report |

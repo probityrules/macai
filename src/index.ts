@@ -12,8 +12,9 @@ import {
 import { MacaiDatabase } from "./persistence/Database.js";
 import { OllamaClient } from "./ollama/OllamaClient.js";
 import { WorktreeManager } from "./git/WorktreeManager.js";
-import { JobManager } from "./queue/JobManager.js";
 import { ReportGenerator } from "./reporting/ReportGenerator.js";
+import { runMacaiStart } from "./cli/runStart.js";
+import { runPromptCommand } from "./cli/promptCommand.js";
 
 const program = new Command();
 
@@ -35,26 +36,52 @@ program
   .option("--base-branch <name>", "Base branch for worktrees")
   .action(async (opts) => {
     try {
-      const baseConfig = loadConfig(opts.config);
-      const config = mergeConfig(baseConfig, {
-        model: opts.model,
-        ollamaUrl: opts.ollamaUrl,
-      });
-
-      await JobManager.recoverIncomplete(opts.repo);
-
-      const manager = new JobManager({
+      await runMacaiStart({
         repo: opts.repo,
         tasks: opts.tasks,
-        appConfig: config,
+        config: opts.config,
+        model: opts.model,
+        ollamaUrl: opts.ollamaUrl,
         hours: parseFloat(opts.hours),
         until: opts.until,
         baseBranch: opts.baseBranch,
+      });
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("prompt")
+  .description("Plan and start a run from a natural-language prompt")
+  .argument("[text]", "What macai should work on")
+  .requiredOption("--repo <path>", "Path to the git repository")
+  .option("-p, --prompt <text>", "Prompt text (alternative to argument)")
+  .option("--prompt-file <file>", "Read prompt from a file")
+  .option("--config <file>", "Config file path")
+  .option("--model <name>", "Ollama model name", "qwen3-coder:latest")
+  .option("--ollama-url <url>", "Ollama base URL", "http://10.0.0.29:11434")
+  .option("--hours <n>", "Default runtime hint in hours", "8")
+  .option("--until <time>", "Stop at wall-clock time (HH:MM)")
+  .option("--base-branch <name>", "Base branch for worktrees")
+  .option("--dry-run", "Generate tasks.yaml and run plan without starting")
+  .option("--output-dir <path>", "Directory for generated plan files")
+  .action(async (text, opts) => {
+    try {
+      await runPromptCommand({
+        repo: opts.repo,
+        prompt: opts.prompt ?? text,
+        promptFile: opts.promptFile,
+        config: opts.config,
         model: opts.model,
         ollamaUrl: opts.ollamaUrl,
+        hours: parseFloat(opts.hours),
+        until: opts.until,
+        baseBranch: opts.baseBranch,
+        dryRun: opts.dryRun,
+        outputDir: opts.outputDir,
       });
-
-      await manager.run();
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);
       process.exit(1);
