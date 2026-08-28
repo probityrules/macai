@@ -1,0 +1,36 @@
+{
+  "name": "macai",
+  "version": "0.1.0",
+  "description": "macai — local autonomous coding agent with Ollama",
+  "type": "module",
+  "bin": {
+    "macai": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0",
+    "execa": "^10.0.1",
+    "pino": "^10.3.1",
+    "simple-git": "^3.36.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

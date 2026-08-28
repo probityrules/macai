@@ -1,0 +1,24 @@
+tasks:
+  - title: Add parser tests
+    description: |
+      Add comprehensive tests for transcriptToJSON.
+      Follow the existing testing conventions.
+      Do not modify production behavior unless necessary.
+    mode: coding
+    priority: 10
+
+  - title: Review error handling
+    description: |
+      Review API error handling and identify obvious bugs.
+      Fix high-confidence issues and add tests.
+    mode: coding
+    priority: 9
+
+  - title: Review TODOs
+    description: |
+      Find TODO comments in src/.
+      Determine which appear actionable.
+      Produce a report.
+      Do not modify code for this task.
+    mode: investigation
+    priority: 5

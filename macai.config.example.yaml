@@ -1,0 +1,44 @@
+provider: ollama
+
+ollama:
+  baseUrl: http://10.0.0.29:11434
+  model: qwen3-coder:latest
+
+limits:
+  maxRuntimeHours: 8
+  maxIterations: 200
+  maxRetriesPerCommand: 3
+  maxRetriesPerValidationCommand: 20
+  maxFilesChanged: 50
+  maxDiffLines: 2000
+  commandTimeoutMs: 300000
+  maxOutputBytes: 100000
+
+shell:
+  allowedCommands:
+    - npm
+    - npx
+    - node
+    - git
+    - pnpm
+    - yarn
+    - python
+    - cargo
+    - go
+  deniedPatterns:
+    - "rm -rf"
+    - "curl.*\\|"
+    - ssh
+    - scp
+
+paths:
+  forbidden:
+    - .ssh
+    - .env
+    - credentials
+
+# Override auto-detected repo commands if needed:
+# repo:
+#   test: npm test
+#   lint: npm run lint
+#   build: npm run build
