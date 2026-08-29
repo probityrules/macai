@@ -27,18 +27,33 @@ describe("ShellGuard", () => {
 
   it("tracks exploratory retries separately from validation retries", () => {
     const cmd = "npm test";
+    const local = new ShellGuard(config);
 
     for (let i = 0; i < 3; i++) {
-      expect(guard.canRetry(cmd, "exploratory")).toBe(true);
-      guard.trackRetry(cmd, "exploratory");
+      expect(local.canRetry(cmd, "exploratory")).toBe(true);
+      local.trackRetry(cmd, "exploratory");
     }
-    expect(guard.canRetry(cmd, "exploratory")).toBe(false);
+    expect(local.canRetry(cmd, "exploratory")).toBe(false);
 
     // validation budget is independent
-    expect(guard.canRetry(cmd, "validation")).toBe(true);
+    expect(local.canRetry(cmd, "validation")).toBe(true);
     for (let i = 0; i < 20; i++) {
-      guard.trackRetry(cmd, "validation");
+      local.trackRetry(cmd, "validation");
     }
-    expect(guard.canRetry(cmd, "validation")).toBe(false);
+    expect(local.canRetry(cmd, "validation")).toBe(false);
+  });
+
+  it("resets validation retries without clearing exploratory", () => {
+    const local = new ShellGuard(config);
+    const cmd = "npm test";
+    for (let i = 0; i < 20; i++) {
+      local.trackRetry(cmd, "validation");
+    }
+    local.trackRetry(cmd, "exploratory");
+    expect(local.canRetry(cmd, "validation")).toBe(false);
+
+    local.resetRetries("validation");
+    expect(local.canRetry(cmd, "validation")).toBe(true);
+    expect(local.getRetryCount(cmd, "exploratory")).toBe(1);
   });
 });

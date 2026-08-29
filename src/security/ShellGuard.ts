@@ -96,6 +96,19 @@ export class ShellGuard {
     return count > this.maxRetriesFor(kind);
   }
 
+  resetRetries(kind?: ShellCommandKind): void {
+    if (!kind) {
+      this.retryCounts.clear();
+      return;
+    }
+    const prefix = `${kind}:`;
+    for (const key of [...this.retryCounts.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.retryCounts.delete(key);
+      }
+    }
+  }
+
   private extractFirstToken(command: string): string {
     const match = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/);
     if (!match) return command;

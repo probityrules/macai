@@ -86,6 +86,8 @@ export class AgentController {
     let commitSha: string | undefined;
     let emptyWorkNudges = 0;
     let emptyCommitRetries = 0;
+    let testFixCycles = 0;
+    const maxTestFixCycles = 3;
 
     try {
       while (true) {
@@ -191,6 +193,24 @@ export class AgentController {
             continue;
           }
 
+          // After a failed test cycle, require new edits before re-testing.
+          if (
+            testFixCycles > 0 &&
+            workResult.filesChanged.length === 0 &&
+            shouldRunValidation(task.mode)
+          ) {
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: "Tests failing and no further file changes made",
+              ended_at: new Date().toISOString(),
+            });
+            return {
+              success: false,
+              failureReason: "Tests failing and no further file changes made",
+              filesChanged,
+            };
+          }
+
           if (shouldRunValidation(task.mode) && (filesChanged.length > 0 || !readOnly)) {
             phase = "test";
           } else {
@@ -204,13 +224,47 @@ export class AgentController {
           this.log(testResult.passed ? "Tests passed" : "Tests failed — returning to work");
           if (testResult.passed) {
             phase = "review";
-          } else {
-            phase = "work";
-            messages.push({
-              role: "user",
-              content: `Tests failed. Analyze and fix.\n${testResult.output.slice(0, 4000)}`,
-            });
+            continue;
           }
+
+          if (/Max retries exceeded/i.test(testResult.output)) {
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: "Validation command retry budget exhausted",
+              ended_at: new Date().toISOString(),
+            });
+            return {
+              success: false,
+              failureReason: "Validation command retry budget exhausted",
+              filesChanged,
+            };
+          }
+
+          testFixCycles += 1;
+          if (testFixCycles > maxTestFixCycles) {
+            this.log(`Giving up after ${maxTestFixCycles} test-fix cycles`);
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: `Tests still failing after ${maxTestFixCycles} fix attempts`,
+              ended_at: new Date().toISOString(),
+            });
+            return {
+              success: false,
+              failureReason: `Tests still failing after ${maxTestFixCycles} fix attempts`,
+              filesChanged,
+            };
+          }
+
+          toolRegistry.resetRetries("validation");
+          phase = "work";
+          messages.push({
+            role: "user",
+            content:
+              `Tests failed (fix attempt ${testFixCycles}/${maxTestFixCycles}). Analyze and fix.\n` +
+              `${testResult.output.slice(0, 4000)}\n\n` +
+              "Focus on fixing the test failure. Do not rewrite unrelated sample/docs files. " +
+              "If the failure is environmental (missing deps), run the install command then re-test.",
+          });
           continue;
         }
 

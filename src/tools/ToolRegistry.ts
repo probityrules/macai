@@ -64,6 +64,10 @@ export class ToolRegistry {
     }));
   }
 
+  resetRetries(kind?: ShellCommandKind): void {
+    this.shellGuard.resetRetries(kind);
+  }
+
   async execute(name: string, args: Record<string, unknown>): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) {
