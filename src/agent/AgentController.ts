@@ -361,17 +361,28 @@ export class AgentController {
 
     const recordPhase: AgentPhase = phase === "investigate" ? "work" : phase;
     const requiresMutatingTools = phase === "work";
+    const alreadyDirty = requiresMutatingTools && hasWorkingTreeChanges(this.ctx.worktreePath);
 
     if (requiresMutatingTools) {
       messages.push({
         role: "user",
-        content: [
-          `Begin WORK for: ${task.title}`,
-          task.description,
-          "",
-          "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
-          "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
-        ].join("\n"),
+        content: alreadyDirty
+          ? [
+              `Continue WORK for: ${task.title}`,
+              task.description,
+              "",
+              "There are already uncommitted changes in the worktree.",
+              "If tests failed, fix the failure (install deps, adjust code/tests) — do not rewrite unrelated files.",
+              "Use tools. Call run_tests after fixes. When ready, finish so review/commit can proceed.",
+            ].join("\n")
+          : [
+              `Begin WORK for: ${task.title}`,
+              task.description,
+              "",
+              "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
+              "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
+              "Note: only root /sample-project/ is gitignored — files under templates/ are tracked.",
+            ].join("\n"),
       });
     }
 
@@ -417,7 +428,9 @@ export class AgentController {
 
       const toolCalls = response.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
-        if (requiresMutatingTools && filesChanged.length === 0 && idleNudges < 3) {
+        const dirty =
+          filesChanged.length > 0 || hasWorkingTreeChanges(this.ctx.worktreePath);
+        if (requiresMutatingTools && !dirty && idleNudges < 3) {
           idleNudges += 1;
           this.log(`iter ${iter} [${phase}]: (no tools — nudging to write)`);
           messages.push({

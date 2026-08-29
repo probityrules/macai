@@ -1,5 +1,5 @@
-sample-project/
-sample-tasks.yaml
+/sample-project/
+/sample-tasks.yaml
 dist/
 *.log
 .env

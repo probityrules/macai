@@ -13,7 +13,7 @@ import {
 import { MacaiDatabase } from "../persistence/Database.js";
 import { OllamaClient } from "../ollama/OllamaClient.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
-import { RepoDetector, runTestCommand, getTestCommand } from "../repo/RepoDetector.js";
+import { RepoDetector, runTestCommand, getTestCommand, getInstallCommand, ensureWorktreeDependencies } from "../repo/RepoDetector.js";
 import { AgentController } from "../agent/AgentController.js";
 import { shouldRunValidation, usesWorktree } from "../agent/AgentState.js";
 import { TaskQueue } from "./TaskQueue.js";
@@ -209,6 +209,16 @@ export class JobManager {
         log("Read-only task — using repository directly (no branch)");
       } else if (chainBaseRef !== initialBase) {
         log(`Chained worktree from prior work: ${chainBaseRef}`);
+      }
+
+      if (mutating) {
+        const installCmd = getInstallCommand(this.config, detected);
+        await ensureWorktreeDependencies(
+          worktree.worktreePath,
+          installCmd,
+          this.config.limits.commandTimeoutMs,
+          log,
+        );
       }
 
       this.db.updateTask(task.id, {

@@ -108,38 +108,62 @@ export class OllamaClient {
   async chat(
     messages: OllamaMessage[],
     tools?: OllamaTool[],
-    options?: { temperature?: number },
+    options?: { temperature?: number; retries?: number },
   ): Promise<ChatResponse> {
-    this.abortController = new AbortController();
+    const maxAttempts = Math.max(1, (options?.retries ?? 3));
+    let lastError: Error | undefined;
 
-    const body: Record<string, unknown> = {
-      model: this.model,
-      messages,
-      stream: false,
-      options: {
-        temperature: options?.temperature ?? 0.2,
-      },
-    };
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      this.abortController = new AbortController();
 
-    if (tools && tools.length > 0) {
-      body.tools = tools;
+      const body: Record<string, unknown> = {
+        model: this.model,
+        messages,
+        stream: false,
+        options: {
+          temperature: options?.temperature ?? 0.2,
+        },
+      };
+
+      if (tools && tools.length > 0) {
+        body.tools = tools;
+      }
+
+      try {
+        const res = await fetch(`${this.baseUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: this.abortController.signal,
+        });
+
+        this.abortController = null;
+
+        if (!res.ok) {
+          const text = await res.text();
+          const err = new Error(`Ollama chat failed (${res.status}): ${text}`);
+          if (!isTransientOllamaFailure(res.status, text) || attempt === maxAttempts) {
+            throw err;
+          }
+          lastError = err;
+          await sleep(500 * attempt);
+          continue;
+        }
+
+        return (await res.json()) as ChatResponse;
+      } catch (err) {
+        this.abortController = null;
+        const error = err instanceof Error ? err : new Error(String(err));
+        const msg = error.message;
+        if (!isTransientOllamaFailure(0, msg) || attempt === maxAttempts) {
+          throw error;
+        }
+        lastError = error;
+        await sleep(500 * attempt);
+      }
     }
 
-    const res = await fetch(`${this.baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: this.abortController.signal,
-    });
-
-    this.abortController = null;
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Ollama chat failed (${res.status}): ${text}`);
-    }
-
-    return (await res.json()) as ChatResponse;
+    throw lastError ?? new Error("Ollama chat failed");
   }
 
   async *streamChat(
@@ -227,4 +251,20 @@ export class OllamaClient {
     const data = (await res.json()) as { response: string };
     return data.response;
   }
+}
+
+function isTransientOllamaFailure(status: number, body: string): boolean {
+  if (status === 500 || status === 502 || status === 503 || status === 504) return true;
+  const lower = body.toLowerCase();
+  return (
+    lower.includes("eof") ||
+    lower.includes("econnreset") ||
+    lower.includes("etimedout") ||
+    lower.includes("fetch failed") ||
+    lower.includes("socket hang up")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

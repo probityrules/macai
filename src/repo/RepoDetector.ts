@@ -145,3 +145,40 @@ export async function runTestCommand(
 export function getTestCommand(config: AppConfig, detected: DetectedRepo): string | undefined {
   return config.repo.test ?? detected.commands.test;
 }
+
+export function getInstallCommand(config: AppConfig, detected: DetectedRepo): string | undefined {
+  return config.repo.install ?? detected.commands.install;
+}
+
+export async function ensureWorktreeDependencies(
+  worktreePath: string,
+  installCommand: string | undefined,
+  timeoutMs: number,
+  onLog?: (line: string) => void,
+): Promise<void> {
+  if (!installCommand) return;
+
+  const marker = path.join(worktreePath, "node_modules");
+  // Node projects: skip only if a likely-complete install exists
+  if (fs.existsSync(path.join(worktreePath, "package.json"))) {
+    const vitestOk = fs.existsSync(path.join(marker, "vitest", "dist", "cli.js"));
+    const hasModules = fs.existsSync(marker);
+    if (hasModules && vitestOk) return;
+  }
+
+  onLog?.(`Installing dependencies in worktree: ${installCommand}`);
+  const result = await execa(installCommand, {
+    cwd: worktreePath,
+    shell: true,
+    timeout: timeoutMs,
+    reject: false,
+    all: true,
+    env: { ...process.env, CI: "true", FORCE_COLOR: "0" },
+  });
+
+  if ((result.exitCode ?? 1) !== 0) {
+    const output = result.all ?? result.stderr ?? "install failed";
+    throw new Error(`Worktree install failed (${result.exitCode}): ${output.slice(0, 2000)}`);
+  }
+  onLog?.("Worktree dependencies ready");
+}
