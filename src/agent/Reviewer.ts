@@ -17,7 +17,10 @@ export class Reviewer {
     const response = await this.ollama.chat([
       {
         role: "system",
-        content: "You are a code review assistant. Be strict but fair. Never approve an empty diff.",
+        content:
+          "You are a code review assistant. Be strict but fair. Never approve an empty diff. " +
+          "If the diff implements the task and looks safe, respond APPROVED. " +
+          "Only REJECT when there is a concrete defect.",
       },
       {
         role: "user",

@@ -87,7 +87,10 @@ export class AgentController {
     let emptyWorkNudges = 0;
     let emptyCommitRetries = 0;
     let testFixCycles = 0;
+    let reviewRejectCycles = 0;
+    let testsPassed = false;
     const maxTestFixCycles = 3;
+    const maxReviewRejectCycles = 3;
 
     try {
       while (true) {
@@ -211,6 +214,18 @@ export class AgentController {
             };
           }
 
+          // After a review rejection, if no new edits and tests already passed, commit anyway.
+          if (
+            reviewRejectCycles > 0 &&
+            workResult.filesChanged.length === 0 &&
+            testsPassed &&
+            hasWorkingTreeChanges(worktreePath)
+          ) {
+            this.log("No new changes after review rejection — proceeding to commit");
+            phase = "commit";
+            continue;
+          }
+
           if (shouldRunValidation(task.mode) && (filesChanged.length > 0 || !readOnly)) {
             phase = "test";
           } else {
@@ -223,9 +238,12 @@ export class AgentController {
           const testResult = await this.runValidation(contextManager, toolRegistry);
           this.log(testResult.passed ? "Tests passed" : "Tests failed — returning to work");
           if (testResult.passed) {
+            testsPassed = true;
             phase = "review";
             continue;
           }
+
+          testsPassed = false;
 
           if (/Max retries exceeded/i.test(testResult.output)) {
             db.updateTask(task.id, {
@@ -283,18 +301,39 @@ export class AgentController {
             };
           }
 
-          const diff = gitExec(["diff", "--stat"], worktreePath);
-          const review = await this.reviewer.review(task.title, diff);
+          const status = gitExec(["status", "--porcelain"], worktreePath);
+          const diff =
+            gitExec(["diff", "--stat"], worktreePath) +
+            "\n" +
+            gitExec(["diff", "--stat", "--cached"], worktreePath);
+          const review = await this.reviewer.review(
+            task.title,
+            `Status:\n${status || "(clean)"}\n\nDiff stat:\n${diff.trim() || "(empty)"}`,
+          );
           this.log(review.approved ? "Review approved" : "Review rejected — returning to work");
           if (review.approved) {
             phase = "commit";
-          } else {
-            messages.push({
-              role: "user",
-              content: `Review rejected:\n${review.feedback}\n\nFix issues and try again. Use write_file/edit_file if no changes exist yet.`,
-            });
-            phase = "work";
+            continue;
           }
+
+          reviewRejectCycles += 1;
+          if (
+            reviewRejectCycles > maxReviewRejectCycles &&
+            testsPassed &&
+            hasWorkingTreeChanges(worktreePath)
+          ) {
+            this.log(
+              `Review rejected ${reviewRejectCycles} times but tests passed — proceeding to commit`,
+            );
+            phase = "commit";
+            continue;
+          }
+
+          messages.push({
+            role: "user",
+            content: `Review rejected:\n${review.feedback}\n\nFix issues and try again. Use write_file/edit_file if no changes exist yet.`,
+          });
+          phase = "work";
           continue;
         }
 

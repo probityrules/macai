@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { getTaskDir } from "../config/Config.js";
 import type { WorktreeInfo, CreateWorktreeOptions } from "../config/types.js";
+import { detachWorktreeNodeModules } from "../repo/RepoDetector.js";
 
 export class WorktreeManager {
   constructor(private repoPath: string) {
@@ -98,6 +99,9 @@ export class WorktreeManager {
   removeWorktree(taskId: string, force = false): void {
     const worktreePath = path.join(getTaskDir(this.repoPath, taskId), "worktree");
     if (!fs.existsSync(worktreePath)) return;
+
+    // Critical: linked node_modules must be detached before recursive delete.
+    detachWorktreeNodeModules(worktreePath);
 
     const args = ["worktree", "remove", worktreePath];
     if (force) args.push("--force");

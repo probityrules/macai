@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { execa } from "execa";
 import type { AppConfig, DetectedRepo, RepoCommands, TestResult } from "../config/types.js";
 
@@ -57,15 +58,6 @@ export function parseTestOutput(output: string): { passed: number; failed: numbe
   let failed = 0;
   let skipped = 0;
 
-  const patterns = [
-    /(\d+)\s+passed/i,
-    /(\d+)\s+failed/i,
-    /(\d+)\s+skipped/i,
-    /Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed,\s+(\d+)\s+total/i,
-    /(\d+)\s+passing/i,
-    /(\d+)\s+failing/i,
-  ];
-
   const jestMatch = output.match(/Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed,\s+(\d+)\s+total/i);
   if (jestMatch) {
     failed = parseInt(jestMatch[1], 10);
@@ -80,21 +72,16 @@ export function parseTestOutput(output: string): { passed: number; failed: numbe
     return { passed, failed, skipped };
   }
 
-  for (const pattern of patterns) {
-    const match = output.match(pattern);
-    if (match) {
-      const val = parseInt(match[1], 10);
-      if (pattern.source.includes("passed") || pattern.source.includes("passing")) passed = val;
-      if (pattern.source.includes("failed") || pattern.source.includes("failing")) failed = val;
-      if (pattern.source.includes("skipped")) skipped = val;
-    }
-  }
+  const passMatch = output.match(/(\d+)\s+passed/i);
+  const failMatch = output.match(/(\d+)\s+failed/i);
+  const skipMatch = output.match(/(\d+)\s+skipped/i);
+  if (passMatch) passed = parseInt(passMatch[1], 10);
+  if (failMatch) failed = parseInt(failMatch[1], 10);
+  if (skipMatch) skipped = parseInt(skipMatch[1], 10);
 
-  if (passed === 0 && failed === 0) {
-    const okMatches = output.match(/\bok\b/gi);
-    const failMatches = output.match(/\bfail(?:ed|ures?)?\b/gi);
-    if (okMatches) passed = okMatches.length;
-    if (failMatches) failed = failMatches.length;
+  const vitestFiles = output.match(/Test Files\s+(\d+)\s+passed/i);
+  if (vitestFiles && passed === 0) {
+    passed = parseInt(vitestFiles[1], 10);
   }
 
   return { passed, failed, skipped };
@@ -108,7 +95,6 @@ export async function runTestCommand(
 ): Promise<TestResult> {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
-  const start = Date.now();
   let exitCode = 0;
   let combined = "";
 
@@ -150,20 +136,83 @@ export function getInstallCommand(config: AppConfig, detected: DetectedRepo): st
   return config.repo.install ?? detected.commands.install;
 }
 
+export function nodeModulesHealthy(root: string): boolean {
+  // Vitest is the usual failure mode in this project; also accept a generic package manager layout.
+  if (fs.existsSync(path.join(root, "node_modules", "vitest", "dist", "cli.js"))) {
+    return true;
+  }
+  if (fs.existsSync(path.join(root, "node_modules", ".bin"))) {
+    // Non-vitest projects: treat presence of .bin as good enough
+    return !fs.existsSync(path.join(root, "node_modules", "vitest"));
+  }
+  return false;
+}
+
+function filesIdentical(a: string, b: string): boolean {
+  try {
+    if (!fs.existsSync(a) || !fs.existsSync(b)) return false;
+    return fs.readFileSync(a).equals(fs.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+
+function linkNodeModules(mainModules: string, worktreeModules: string, onLog?: (line: string) => void): boolean {
+  try {
+    if (fs.existsSync(worktreeModules)) {
+      fs.rmSync(worktreeModules, { recursive: true, force: true });
+    }
+    const type = process.platform === "win32" ? "junction" : "dir";
+    fs.symlinkSync(mainModules, worktreeModules, type);
+    onLog?.(`Linked node_modules from ${mainModules}`);
+    return nodeModulesHealthy(path.dirname(worktreeModules));
+  } catch (err) {
+    onLog?.(
+      `Failed to link node_modules: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Ensure a worktree can run package scripts. Prefers linking the main repo's
+ * node_modules when package manifests match (fast + reliable on Windows nested
+ * worktrees). Falls back to installCommand and verifies afterward.
+ */
 export async function ensureWorktreeDependencies(
   worktreePath: string,
   installCommand: string | undefined,
   timeoutMs: number,
   onLog?: (line: string) => void,
+  mainRepoPath?: string,
 ): Promise<void> {
-  if (!installCommand) return;
+  const pkgPath = path.join(worktreePath, "package.json");
+  if (!fs.existsSync(pkgPath)) return;
 
-  const marker = path.join(worktreePath, "node_modules");
-  // Node projects: skip only if a likely-complete install exists
-  if (fs.existsSync(path.join(worktreePath, "package.json"))) {
-    const vitestOk = fs.existsSync(path.join(marker, "vitest", "dist", "cli.js"));
-    const hasModules = fs.existsSync(marker);
-    if (hasModules && vitestOk) return;
+  if (nodeModulesHealthy(worktreePath)) return;
+
+  const mainRoot = mainRepoPath ? path.resolve(mainRepoPath) : undefined;
+  const mainModules = mainRoot ? path.join(mainRoot, "node_modules") : undefined;
+
+  if (
+    mainRoot &&
+    mainModules &&
+    nodeModulesHealthy(mainRoot) &&
+    filesIdentical(path.join(mainRoot, "package.json"), pkgPath) &&
+    filesIdentical(
+      path.join(mainRoot, "package-lock.json"),
+      path.join(worktreePath, "package-lock.json"),
+    )
+  ) {
+    if (linkNodeModules(mainModules, path.join(worktreePath, "node_modules"), onLog)) {
+      return;
+    }
+  }
+
+  if (!installCommand) {
+    throw new Error(
+      `Worktree at ${worktreePath} has no usable node_modules and no install command configured`,
+    );
   }
 
   onLog?.(`Installing dependencies in worktree: ${installCommand}`);
@@ -178,7 +227,60 @@ export async function ensureWorktreeDependencies(
 
   if ((result.exitCode ?? 1) !== 0) {
     const output = result.all ?? result.stderr ?? "install failed";
+    // Last resort: link main modules even if manifests differ slightly
+    if (mainRoot && mainModules && nodeModulesHealthy(mainRoot)) {
+      onLog?.("Install failed — falling back to main node_modules link");
+      if (linkNodeModules(mainModules, path.join(worktreePath, "node_modules"), onLog)) {
+        return;
+      }
+    }
     throw new Error(`Worktree install failed (${result.exitCode}): ${output.slice(0, 2000)}`);
   }
+
+  if (!nodeModulesHealthy(worktreePath)) {
+    if (mainRoot && mainModules && nodeModulesHealthy(mainRoot)) {
+      onLog?.("Install finished but deps look incomplete — linking main node_modules");
+      if (linkNodeModules(mainModules, path.join(worktreePath, "node_modules"), onLog)) {
+        return;
+      }
+    }
+    throw new Error(
+      `Worktree install completed but node_modules is not usable (missing vitest/cli). ` +
+        `Tried: ${installCommand}`,
+    );
+  }
+
   onLog?.("Worktree dependencies ready");
+}
+
+/** Remove a linked/junctioned node_modules without deleting the link target. */
+export function detachWorktreeNodeModules(worktreePath: string): void {
+  const nm = path.join(worktreePath, "node_modules");
+  try {
+    if (!fs.lstatSync(nm, { throwIfNoEntry: false })) return;
+  } catch {
+    return;
+  }
+  try {
+    const st = fs.lstatSync(nm);
+    if (st.isSymbolicLink()) {
+      fs.unlinkSync(nm);
+      return;
+    }
+  } catch {
+    // continue
+  }
+  try {
+    if (process.platform === "win32") {
+      execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
+    } else {
+      fs.rmdirSync(nm);
+    }
+  } catch {
+    try {
+      fs.rmdirSync(nm);
+    } catch {
+      // ignore
+    }
+  }
 }

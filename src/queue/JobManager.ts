@@ -218,6 +218,7 @@ export class JobManager {
           installCmd,
           this.config.limits.commandTimeoutMs,
           log,
+          this.repoPath,
         );
       }
 
