@@ -142,6 +142,8 @@ export interface StartOptions {
   hours?: number;
   until?: string;
   baseBranch?: string;
+  /** When true (default), stop the run after the first failed task. */
+  stopOnFailure?: boolean;
 }
 
 export interface JobStartOptions extends StartOptions {
@@ -172,6 +174,11 @@ export interface WorktreeInfo {
   worktreePath: string;
   branch: string;
   baseCommit: string;
+}
+
+export interface CreateWorktreeOptions {
+  /** Branch name, commit SHA, or other git ref to base the new branch on. */
+  baseRef?: string;
 }
 
 export interface CheckpointState {

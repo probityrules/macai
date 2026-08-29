@@ -4,6 +4,7 @@ import type { MacaiDatabase } from "../persistence/Database.js";
 
 export class ContextManager {
   private state: CheckpointState;
+  private priorHandoff?: string;
 
   constructor(
     private taskId: string,
@@ -22,6 +23,14 @@ export class ContextManager {
 
   getState(): CheckpointState {
     return { ...this.state };
+  }
+
+  setPriorHandoff(summary: string): void {
+    this.priorHandoff = summary;
+  }
+
+  getPriorHandoff(): string | undefined {
+    return this.priorHandoff;
   }
 
   setPhase(phase: AgentPhase): void {
@@ -68,6 +77,7 @@ export class ContextManager {
       `# Task: ${task.title}`,
       `Mode: ${task.mode}`,
       `Description: ${task.description}`,
+      this.priorHandoff ? `\n## Prior task handoff\n${this.priorHandoff}` : "",
       this.state.plan ? `\n## Plan\n${this.state.plan}` : "",
       this.state.filesExamined.length
         ? `\n## Files Examined\n${this.state.filesExamined.slice(-20).join("\n")}`

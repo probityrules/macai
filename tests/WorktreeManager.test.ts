@@ -40,4 +40,32 @@ describe("WorktreeManager", () => {
     expect(status.clean).toBe(true);
     expect(status.branch).toBe(`macai/${taskId}`);
   });
+
+  it("creates worktree from an explicit base ref (commit)", () => {
+    fs.writeFileSync(path.join(repoPath, "extra.txt"), "v1\n");
+    execFileSync("git", ["add", "."], { cwd: repoPath });
+    execFileSync("git", ["commit", "-m", "second"], { cwd: repoPath });
+    const tip = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    }).trim();
+    const parent = execFileSync("git", ["rev-parse", "HEAD~1"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    }).trim();
+
+    const taskId = "b2c3d4e5f6789012";
+    fs.mkdirSync(path.join(repoPath, ".macai", "tasks", taskId), { recursive: true });
+
+    const manager = new WorktreeManager(repoPath);
+    const info = manager.createWorktree(taskId, { baseRef: parent });
+
+    expect(info.baseCommit).toBe(parent);
+    expect(info.baseCommit).not.toBe(tip);
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: info.worktreePath,
+      encoding: "utf8",
+    }).trim();
+    expect(head).toBe(parent);
+  });
 });

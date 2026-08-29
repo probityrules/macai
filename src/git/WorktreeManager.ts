@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { getTaskDir } from "../config/Config.js";
-import type { WorktreeInfo } from "../config/types.js";
+import type { WorktreeInfo, CreateWorktreeOptions } from "../config/types.js";
 
 export class WorktreeManager {
   constructor(private repoPath: string) {
@@ -37,13 +37,23 @@ export class WorktreeManager {
     return status.length === 0;
   }
 
-  createWorktree(taskId: string, baseBranch?: string): WorktreeInfo {
+  createWorktree(taskId: string, baseBranchOrOpts?: string | CreateWorktreeOptions): WorktreeInfo {
+    const opts: CreateWorktreeOptions =
+      typeof baseBranchOrOpts === "string"
+        ? { baseRef: baseBranchOrOpts }
+        : (baseBranchOrOpts ?? {});
+
     const branch = `macai/${taskId}`;
     const worktreePath = path.join(getTaskDir(this.repoPath, taskId), "worktree");
     fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
 
-    const branchBase = baseBranch ?? this.getCurrentBranch();
-    const baseCommit = this.getHeadCommit();
+    const branchBase = opts.baseRef ?? this.getCurrentBranch();
+    let baseCommit: string;
+    try {
+      baseCommit = this.git(["rev-parse", branchBase]);
+    } catch {
+      baseCommit = this.getHeadCommit();
+    }
 
     if (fs.existsSync(worktreePath)) {
       return { worktreePath, branch, baseCommit };
@@ -52,7 +62,12 @@ export class WorktreeManager {
     try {
       this.git(["branch", branch, branchBase]);
     } catch {
-      // branch may already exist
+      // branch may already exist — try to reset if we need a fresh tip from base
+      try {
+        this.git(["branch", "-f", branch, branchBase]);
+      } catch {
+        // ignore
+      }
     }
 
     this.git(["worktree", "add", worktreePath, branch]);

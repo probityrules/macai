@@ -5,10 +5,19 @@ export class Reviewer {
   constructor(private ollama: OllamaClient) {}
 
   async review(taskTitle: string, diffSummary: string): Promise<{ approved: boolean; feedback: string }> {
+    const trimmed = diffSummary.trim();
+    if (!trimmed) {
+      return {
+        approved: false,
+        feedback:
+          "REJECTED: Diff is empty. No files were changed. Use write_file or edit_file to implement the task, then review again.",
+      };
+    }
+
     const response = await this.ollama.chat([
       {
         role: "system",
-        content: "You are a code review assistant. Be strict but fair.",
+        content: "You are a code review assistant. Be strict but fair. Never approve an empty diff.",
       },
       {
         role: "user",

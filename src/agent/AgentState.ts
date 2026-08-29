@@ -32,6 +32,14 @@ export function isReadOnlyMode(mode: string): boolean {
   return mode === "review" || mode === "investigation";
 }
 
+export function usesWorktree(mode: string): boolean {
+  return !isReadOnlyMode(mode);
+}
+
+export function shouldRunValidation(mode: string): boolean {
+  return mode !== "documentation" && mode !== "review" && mode !== "investigation";
+}
+
 export function statusForPhase(phase: AgentPhase): TaskStatus {
   switch (phase) {
     case "understand":

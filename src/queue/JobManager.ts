@@ -15,6 +15,7 @@ import { OllamaClient } from "../ollama/OllamaClient.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
 import { RepoDetector, runTestCommand, getTestCommand } from "../repo/RepoDetector.js";
 import { AgentController } from "../agent/AgentController.js";
+import { shouldRunValidation, usesWorktree } from "../agent/AgentState.js";
 import { TaskQueue } from "./TaskQueue.js";
 import { Scheduler } from "./Scheduler.js";
 import { RunLock } from "./RunLock.js";
@@ -135,7 +136,8 @@ export class JobManager {
   private async executeRun(ollama: OllamaClient, detected: DetectedRepo): Promise<void> {
     const queue = new TaskQueue(this.db, this.runId);
     const worktreeManager = new WorktreeManager(this.repoPath);
-    const baseBranch = this.options.baseBranch ?? worktreeManager.getCurrentBranch();
+    const initialBase = this.options.baseBranch ?? worktreeManager.getCurrentBranch();
+    const stopOnFailure = this.options.stopOnFailure !== false;
 
     const testCmd = getTestCommand(this.config, detected);
     let baselinePassed: number | null = null;
@@ -164,12 +166,18 @@ export class JobManager {
     let commitsCreated = 0;
     let resultPassed = baselinePassed;
     let resultFailed = baselineFailed;
+    let stoppedEarly = false;
+
+    /** Base ref for the next mutating worktree (branch name or commit). */
+    let chainBaseRef = initialBase;
+    const handoffParts: string[] = [];
 
     const taskCount = queue.getAll().length;
     console.log(`\nmacai run ${this.runId} started`);
     console.log(`Repository: ${this.repoPath}`);
     console.log(`Model: ${this.config.ollama.model}`);
-    console.log(`Tasks: ${taskCount}\n`);
+    console.log(`Tasks: ${taskCount}`);
+    console.log(`Stop on failure: ${stopOnFailure}\n`);
 
     while (!this.scheduler.shouldStop()) {
       const task = queue.getNext();
@@ -188,16 +196,30 @@ export class JobManager {
 
       log(`--- Task ${task.id}: ${task.title} ---`);
 
-      const worktree = worktreeManager.createWorktree(task.id, baseBranch);
+      const mutating = usesWorktree(task.mode);
+      const worktree = mutating
+        ? worktreeManager.createWorktree(task.id, { baseRef: chainBaseRef })
+        : {
+            worktreePath: this.repoPath,
+            branch: null as string | null,
+            baseCommit: worktreeManager.getHeadCommit(),
+          };
+
+      if (!mutating) {
+        log("Read-only task — using repository directly (no branch)");
+      } else if (chainBaseRef !== initialBase) {
+        log(`Chained worktree from prior work: ${chainBaseRef}`);
+      }
+
       this.db.updateTask(task.id, {
-        worktree_path: worktree.worktreePath,
+        worktree_path: mutating ? worktree.worktreePath : null,
         branch: worktree.branch,
         base_commit: worktree.baseCommit,
         status: "starting",
       });
 
       let baseline;
-      if (testCmd) {
+      if (testCmd && mutating && shouldRunValidation(task.mode)) {
         const baselinePath = path.join(taskDir, "baseline.log");
         baseline = await runTestCommand(
           testCmd,
@@ -218,14 +240,20 @@ export class JobManager {
         });
       }
 
+      const priorHandoff =
+        handoffParts.length > 0
+          ? { summary: handoffParts.slice(-6).join("\n\n") }
+          : undefined;
+
       const controller = new AgentController({
         config: this.config,
         ollama,
         db: this.db,
-        task,
+        task: { ...task, branch: worktree.branch },
         worktreePath: worktree.worktreePath,
         logDir: taskDir,
         baseline,
+        priorHandoff,
         onLog: log,
         shouldStop: () => this.scheduler.shouldStop(),
       });
@@ -239,15 +267,76 @@ export class JobManager {
           commitsCreated++;
           this.db.updateTask(task.id, { head_commit: result.commitSha });
         }
+
+        if (mutating && (result.commitSha || result.headCommit)) {
+          const tip = result.commitSha ?? result.headCommit!;
+          chainBaseRef = worktree.branch ?? tip;
+        }
+
+        const artifactNotes: string[] = [];
+        if (result.investigationReport) {
+          artifactNotes.push(
+            `Investigation report: ${path.join(".macai", "tasks", task.id, "investigation-report.md").replace(/\\/g, "/")}`,
+          );
+        }
+        const reportOnDisk = path.join(taskDir, "investigation-report.md");
+        if (fs.existsSync(reportOnDisk) && fs.statSync(reportOnDisk).size > 0) {
+          artifactNotes.push(
+            `Report path: ${path.join(".macai", "tasks", task.id, "investigation-report.md").replace(/\\/g, "/")}`,
+          );
+        }
+
+        handoffParts.push(
+          [
+            `### Completed: ${task.title} (${task.id})`,
+            `Mode: ${task.mode}`,
+            worktree.branch ? `Branch: ${worktree.branch}` : "Branch: (none — read-only)",
+            result.commitSha ? `Commit: ${result.commitSha}` : "",
+            result.filesChanged.length
+              ? `Files changed: ${result.filesChanged.join(", ")}`
+              : "",
+            ...artifactNotes,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+
         log(`Completed: ${task.title}`);
       } else {
         tasksFailed++;
         log(`Failed: ${task.title} — ${result.failureReason}`);
+
+        if (stopOnFailure) {
+          const cancelled = this.db.cancelQueuedTasks(
+            this.runId,
+            `Cancelled: prior task ${task.id} failed`,
+          );
+          if (cancelled > 0) {
+            log(`Stopped run after failure — cancelled ${cancelled} remaining task(s)`);
+          }
+          stoppedEarly = true;
+          logStream.end();
+          this.db.updateRun(this.runId, {
+            tasks_attempted: tasksAttempted,
+            tasks_completed: tasksCompleted,
+            tasks_failed: tasksFailed,
+            tasks_investigated: tasksInvestigated,
+            commits_created: commitsCreated,
+            result_passed: resultPassed ?? undefined,
+            result_failed: resultFailed ?? undefined,
+          } as never);
+          break;
+        }
       }
 
       logStream.end();
 
-      if (testCmd && result.success) {
+      if (
+        testCmd &&
+        result.success &&
+        mutating &&
+        shouldRunValidation(task.mode)
+      ) {
         const resultPath = path.join(taskDir, "result.log");
         const testResult = await runTestCommand(
           testCmd,
@@ -273,12 +362,16 @@ export class JobManager {
     }
 
     const runtimeMs = this.scheduler.getRuntimeMs();
-    const status = this.scheduler.isCancelled() ? "cancelled" : "completed";
+    const status = this.scheduler.isCancelled()
+      ? "cancelled"
+      : stoppedEarly
+        ? "failed"
+        : "completed";
     this.db.finishRun(this.runId, status, runtimeMs);
 
     const reporter = new ReportGenerator(this.db, this.repoPath);
     const reportPath = reporter.generateRunReport(this.runId);
-    console.log(`\nRun finished. Report: ${reportPath}`);
+    console.log(`\nRun finished (${status}). Report: ${reportPath}`);
     console.log(`Runtime: ${formatDuration(runtimeMs)}`);
   }
 
@@ -295,6 +388,14 @@ export class JobManager {
     const worktreeManager = new WorktreeManager(resolved);
 
     for (const task of incomplete) {
+      if (!usesWorktree(task.mode)) {
+        db.updateTask(task.id, {
+          status: "blocked",
+          failure_reason: "Interrupted during read-only task",
+        });
+        continue;
+      }
+
       if (!task.worktree_path) {
         db.updateTask(task.id, { status: "blocked", failure_reason: "No worktree found" });
         continue;

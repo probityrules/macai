@@ -11,6 +11,7 @@ export interface StartCommandOptions {
   hours?: number;
   until?: string;
   baseBranch?: string;
+  stopOnFailure?: boolean;
   taskDefinitions?: TaskDefinition[];
 }
 
@@ -32,6 +33,7 @@ export async function runMacaiStart(opts: StartCommandOptions): Promise<void> {
     baseBranch: opts.baseBranch,
     model: opts.model,
     ollamaUrl: opts.ollamaUrl,
+    stopOnFailure: opts.stopOnFailure,
     taskDefinitions: opts.taskDefinitions,
   } satisfies JobStartOptions);
 

@@ -1,11 +1,10 @@
+import type { AppConfig } from "../config/types.js";
+import type { OllamaClient } from "../ollama/OllamaClient.js";
 import fs from "node:fs";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import type { AppConfig } from "../config/types.js";
-import type { OllamaClient } from "../ollama/OllamaClient.js";
-import { RepoDetector } from "../repo/RepoDetector.js";
-import { WorktreeManager } from "../git/WorktreeManager.js";
 import { parseGeneratedRunPlan, type GeneratedRunPlan } from "./runPlanSchema.js";
+import { buildRepoAssessment } from "./RepoAssessment.js";
 
 export interface PromptRunPlannerOptions {
   repoPath: string;
@@ -24,30 +23,20 @@ export interface GeneratedRunArtifacts {
   outputDir: string;
 }
 
-export class PromptRunPlanner {
-  constructor(
-    private ollama: OllamaClient,
-    private config: AppConfig,
-  ) {}
+const PLANNER_SYSTEM = `You are a software task planner for macai, an autonomous coding agent.
 
-  async plan(options: PromptRunPlannerOptions): Promise<GeneratedRunPlan> {
-    const repoContext = this.buildRepoContext(options.repoPath);
-    const response = await this.ollama.chat([
-      {
-        role: "system",
-        content: `You are a software task planner for macai, an autonomous coding agent.
-
-Given a developer's natural-language goal, produce a run plan as JSON only.
+Given a developer's natural-language goal and repository assessment, produce a run plan as JSON only.
 
 Rules:
-- Break work into 1-8 concrete, verifiable tasks ordered by priority (higher priority first)
-- Each task needs a short title and a detailed description with acceptance criteria
-- Use mode "investigation" or "review" for read-only analysis tasks
-- Use mode "coding", "testing", "documentation", or "refactoring" when files may change
-- Prefer small validated tasks over one vague mega-task
-- Infer reasonable hours (1-8) for an unattended run; use overnight (~8h) for broad queues
-- Use until (HH:MM) only if the prompt mentions a stop time
-- Use baseBranch only if the prompt names a branch; otherwise omit it
+- Break work into 1-5 concrete, verifiable tasks ordered by priority (higher priority first). Prefer fewer tasks.
+- Start at the first missing deliverable. If an investigation report already exists (or the prompt names one), do NOT add a redundant investigation task — cite that path in documentation/coding task descriptions.
+- Prefer mode "coding", "testing", "documentation", or "refactoring" when files may change. Use "investigation" or "review" only when existing evidence is insufficient.
+- When reusing prior artifacts, task descriptions MUST name concrete input paths (e.g. .macai/tasks/<id>/investigation-report.md).
+- Each task needs a short title and a detailed description with acceptance criteria.
+- Prefer small validated tasks over one vague mega-task.
+- Infer reasonable hours (1-8) for an unattended run; use overnight (~8h) for broad queues.
+- Use until (HH:MM) only if the prompt mentions a stop time.
+- Use baseBranch only if the prompt names a branch; otherwise omit it.
 
 Respond with JSON only, no markdown prose, matching this schema:
 {
@@ -63,12 +52,22 @@ Respond with JSON only, no markdown prose, matching this schema:
       "priority": 10
     }
   ]
-}`,
-      },
+}`;
+
+export class PromptRunPlanner {
+  constructor(
+    private ollama: OllamaClient,
+    private config: AppConfig,
+  ) {}
+
+  async plan(options: PromptRunPlannerOptions): Promise<GeneratedRunPlan> {
+    const repoContext = buildRepoAssessment(options.repoPath, this.config, options.prompt);
+    const response = await this.ollama.chat([
+      { role: "system", content: PLANNER_SYSTEM },
       {
         role: "user",
         content: [
-          `Repository context:\n${repoContext}`,
+          `Repository assessment:\n${repoContext}`,
           `Default runtime hint: ${options.defaultHours ?? 8} hours`,
           options.defaultUntil ? `Suggested stop time: ${options.defaultUntil}` : "",
           options.defaultBaseBranch ? `Suggested base branch: ${options.defaultBaseBranch}` : "",
@@ -129,39 +128,5 @@ Respond with JSON only, no markdown prose, matching this schema:
       until: options.defaultUntil ?? plan.until,
       baseBranch: options.defaultBaseBranch ?? plan.baseBranch,
     };
-  }
-
-  private buildRepoContext(repoPath: string): string {
-    const root = path.resolve(repoPath);
-    const detector = new RepoDetector();
-    const detected = detector.detect(root, this.config.repo);
-
-    let branch = "unknown";
-    try {
-      branch = new WorktreeManager(root).getCurrentBranch();
-    } catch {
-      // not a git repo — planner will still run; start will fail later
-    }
-
-    const entries = this.listTopLevel(root);
-    return [
-      `Path: ${root}`,
-      `Branch: ${branch}`,
-      `Language: ${detected.language}`,
-      `Test command: ${detected.commands.test ?? "unknown"}`,
-      `Top-level entries: ${entries.join(", ") || "none"}`,
-    ].join("\n");
-  }
-
-  private listTopLevel(root: string, max = 30): string[] {
-    try {
-      return fs
-        .readdirSync(root, { withFileTypes: true })
-        .filter((e) => e.name !== ".git" && e.name !== "node_modules" && e.name !== ".macai")
-        .slice(0, max)
-        .map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
-    } catch {
-      return [];
-    }
   }
 }

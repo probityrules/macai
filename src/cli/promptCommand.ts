@@ -17,6 +17,7 @@ export interface PromptCommandOptions {
   baseBranch?: string;
   dryRun?: boolean;
   outputDir?: string;
+  stopOnFailure?: boolean;
 }
 
 export async function readPromptText(opts: PromptCommandOptions): Promise<string> {
@@ -104,6 +105,7 @@ export async function runPromptCommand(opts: PromptCommandOptions): Promise<void
     hours: plan.hours ?? opts.hours,
     until: plan.until ?? opts.until,
     baseBranch: plan.baseBranch ?? opts.baseBranch,
+    stopOnFailure: opts.stopOnFailure,
     taskDefinitions: plan.tasks,
   });
 }

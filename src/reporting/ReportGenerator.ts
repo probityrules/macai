@@ -60,7 +60,7 @@ export class ReportGenerator {
         if (task.head_commit) {
           lines.push(`Commit: ${task.head_commit.slice(0, 8)}`, "");
         }
-        if (task.branch) {
+        if (task.branch && task.mode !== "investigation" && task.mode !== "review") {
           lines.push(`Branch: ${task.branch}`, "");
         }
         lines.push("");
@@ -103,7 +103,7 @@ export class ReportGenerator {
     if (failed.length > 0) {
       lines.push(`1. Review failed tasks: ${failed.map((t) => t.id).join(", ")}`);
     }
-    lines.push("2. Inspect branches `macai/task-*` and merge selectively");
+    lines.push("2. Inspect branches `macai/<task-hash>` for coding tasks and merge selectively");
     lines.push("3. Verify test results in `.macai/tasks/*/run.log`");
     lines.push("");
 
@@ -146,7 +146,9 @@ export class ReportGenerator {
       `- ID: ${task.id}`,
       `- Status: ${task.status}`,
       `- Mode: ${task.mode}`,
-      task.branch ? `- Branch: ${task.branch}` : "",
+      task.branch && task.mode !== "investigation" && task.mode !== "review"
+        ? `- Branch: ${task.branch}`
+        : "",
       task.head_commit ? `- Commit: ${task.head_commit}` : "",
       task.failure_reason ? `- Failure: ${task.failure_reason}` : "",
       hasInvestigationReport ? `- Investigation report: ${investigationPath}` : "",

@@ -37,6 +37,7 @@ program
   .option("--hours <n>", "Maximum runtime in hours", "8")
   .option("--until <time>", "Stop at wall-clock time (HH:MM)")
   .option("--base-branch <name>", "Base branch for worktrees")
+  .option("--continue-on-failure", "Keep running remaining tasks after a failure")
   .action(async (opts) => {
     try {
       await runMacaiStart({
@@ -48,6 +49,7 @@ program
         hours: parseFloat(opts.hours),
         until: opts.until,
         baseBranch: opts.baseBranch,
+        stopOnFailure: !opts.continueOnFailure,
       });
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);
@@ -68,6 +70,7 @@ program
   .option("--hours <n>", "Default runtime hint in hours", "8")
   .option("--until <time>", "Stop at wall-clock time (HH:MM)")
   .option("--base-branch <name>", "Base branch for worktrees")
+  .option("--continue-on-failure", "Keep running remaining tasks after a failure")
   .option("--dry-run", "Generate tasks.yaml and run plan without starting")
   .option("--output-dir <path>", "Directory for generated plan files")
   .action(async (text, opts) => {
@@ -84,6 +87,7 @@ program
         baseBranch: opts.baseBranch,
         dryRun: opts.dryRun,
         outputDir: opts.outputDir,
+        stopOnFailure: !opts.continueOnFailure,
       });
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);

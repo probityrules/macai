@@ -6,11 +6,19 @@ import type { OllamaClient, OllamaMessage } from "../ollama/OllamaClient.js";
 import type { TestResult } from "../config/types.js";
 import { ToolRegistry, gitExec } from "../tools/ToolRegistry.js";
 import { ContextManager } from "./ContextManager.js";
-import { isReadOnlyMode, nextPhase, statusForPhase } from "./AgentState.js";
+import {
+  isReadOnlyMode,
+  shouldRunValidation,
+  statusForPhase,
+} from "./AgentState.js";
 import { getSystemPrompt, shouldSkipPlanning } from "./prompts/system.js";
 import { Planner } from "./Planner.js";
 import { Reviewer } from "./Reviewer.js";
 import { InvestigationReporter } from "./InvestigationReporter.js";
+
+export interface PriorTaskHandoff {
+  summary: string;
+}
 
 export interface AgentRunContext {
   config: AppConfig;
@@ -20,6 +28,7 @@ export interface AgentRunContext {
   worktreePath: string;
   logDir: string;
   baseline?: TestResult;
+  priorHandoff?: PriorTaskHandoff;
   onLog?: (line: string) => void;
   shouldStop?: () => boolean;
 }
@@ -31,6 +40,7 @@ export interface AgentRunResult {
   failureReason?: string;
   filesChanged: string[];
   investigationReport?: string;
+  branch?: string | null;
 }
 
 export class AgentController {
@@ -52,6 +62,10 @@ export class AgentController {
       ContextManager.loadFromCheckpoint(task.id, db) ??
       new ContextManager(task.id, db);
 
+    if (this.ctx.priorHandoff?.summary) {
+      contextManager.setPriorHandoff(this.ctx.priorHandoff.summary);
+    }
+
     const toolRegistry = new ToolRegistry(
       config,
       { worktreePath, taskId: task.id, readOnly, logDir },
@@ -70,9 +84,11 @@ export class AgentController {
     let messages: OllamaMessage[] = [];
     let filesChanged: string[] = [];
     let commitSha: string | undefined;
+    let emptyWorkNudges = 0;
+    let emptyCommitRetries = 0;
 
     try {
-      while (phase !== "commit" || readOnly) {
+      while (true) {
         if (this.ctx.shouldStop?.()) {
           db.updateTask(task.id, { status: "cancelled" });
           return { success: false, failureReason: "Cancelled", filesChanged };
@@ -86,8 +102,13 @@ export class AgentController {
           return { success: false, failureReason: "Max iterations exceeded", filesChanged };
         }
 
+        if (readOnly && phase === "commit") {
+          break;
+        }
+
         contextManager.setPhase(phase);
         db.updateTask(task.id, { status: statusForPhase(phase) });
+        this.log(`Phase → ${phase}`);
 
         if (phase === "understand") {
           await this.runPhaseUnderstand(contextManager, toolRegistry, messages, task);
@@ -122,7 +143,7 @@ export class AgentController {
             task.mode === "investigation" ? 10 : 15,
           );
           messages = workResult.messages;
-          filesChanged = workResult.filesChanged;
+          filesChanged = [...new Set([...filesChanged, ...workResult.filesChanged])];
 
           if (readOnly && (task.mode === "investigation" || task.mode === "review")) {
             const report = await this.writeInvestigationReport(
@@ -138,15 +159,49 @@ export class AgentController {
               success: true,
               filesChanged: [],
               investigationReport: report,
+              branch: task.branch,
             };
           }
 
-          phase = filesChanged.length > 0 || !readOnly ? "test" : "review";
+          if (
+            !readOnly &&
+            filesChanged.length === 0 &&
+            !hasWorkingTreeChanges(worktreePath)
+          ) {
+            emptyWorkNudges += 1;
+            if (emptyWorkNudges > 3) {
+              db.updateTask(task.id, {
+                status: "failed",
+                failure_reason: "No file changes produced",
+                ended_at: new Date().toISOString(),
+              });
+              return {
+                success: false,
+                failureReason: "No file changes produced",
+                filesChanged,
+              };
+            }
+            messages.push({
+              role: "user",
+              content:
+                "You finished the work phase without changing any files. " +
+                "Implement the task now using write_file or edit_file. Do not only read or search.",
+            });
+            this.log("No file changes yet — continuing work");
+            continue;
+          }
+
+          if (shouldRunValidation(task.mode) && (filesChanged.length > 0 || !readOnly)) {
+            phase = "test";
+          } else {
+            phase = "review";
+          }
           continue;
         }
 
         if (phase === "test") {
           const testResult = await this.runValidation(contextManager, toolRegistry);
+          this.log(testResult.passed ? "Tests passed" : "Tests failed — returning to work");
           if (testResult.passed) {
             phase = "review";
           } else {
@@ -170,42 +225,69 @@ export class AgentController {
               success: true,
               filesChanged: [],
               investigationReport: report,
+              branch: task.branch,
             };
           }
 
           const diff = gitExec(["diff", "--stat"], worktreePath);
           const review = await this.reviewer.review(task.title, diff);
+          this.log(review.approved ? "Review approved" : "Review rejected — returning to work");
           if (review.approved) {
             phase = "commit";
           } else {
             messages.push({
               role: "user",
-              content: `Review rejected:\n${review.feedback}\n\nFix issues and try again.`,
+              content: `Review rejected:\n${review.feedback}\n\nFix issues and try again. Use write_file/edit_file if no changes exist yet.`,
             });
             phase = "work";
           }
           continue;
         }
 
-        break;
-      }
+        if (phase === "commit") {
+          const commitMessage = `macai: ${task.title}\n\nTask: ${task.id}\nAgent: ${this.ctx.ollama.getModel()}`;
+          const result = await toolRegistry.execute("git_commit", { message: commitMessage });
+          const parsed = JSON.parse(result) as { sha?: string; error?: string };
 
-      if (!readOnly && phase === "commit") {
-        const commitMessage = `macai: ${task.title}\n\nTask: ${task.id}\nAgent: ${this.ctx.ollama.getModel()}`;
-        const result = await toolRegistry.execute("git_commit", { message: commitMessage });
-        const parsed = JSON.parse(result) as { sha?: string; error?: string };
-        if (parsed.error) {
-          db.updateTask(task.id, {
-            status: "failed",
-            failure_reason: parsed.error,
-            ended_at: new Date().toISOString(),
-          });
-          return { success: false, failureReason: parsed.error, filesChanged };
+          if (parsed.error === "Nothing to commit") {
+            emptyCommitRetries += 1;
+            if (emptyCommitRetries > 2) {
+              db.updateTask(task.id, {
+                status: "failed",
+                failure_reason: "Nothing to commit",
+                ended_at: new Date().toISOString(),
+              });
+              return { success: false, failureReason: "Nothing to commit", filesChanged };
+            }
+            this.log("Nothing to commit — returning to work");
+            messages.push({
+              role: "user",
+              content:
+                "Commit failed: nothing to commit. The task is not done. " +
+                "Make the required file changes with write_file or edit_file, then finish again.",
+            });
+            phase = "work";
+            continue;
+          }
+
+          if (parsed.error) {
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: parsed.error,
+              ended_at: new Date().toISOString(),
+            });
+            return { success: false, failureReason: parsed.error, filesChanged };
+          }
+
+          commitSha = parsed.sha;
+          if (commitSha) {
+            db.recordCommit(task.id, commitSha, commitMessage);
+            this.log(`Committed ${commitSha.slice(0, 8)}`);
+          }
+          break;
         }
-        commitSha = parsed.sha;
-        if (commitSha) {
-          db.recordCommit(task.id, commitSha, commitMessage);
-        }
+
+        break;
       }
 
       const head = gitExec(["rev-parse", "HEAD"], worktreePath);
@@ -215,7 +297,13 @@ export class AgentController {
         ended_at: new Date().toISOString(),
       });
 
-      return { success: true, headCommit: head, commitSha, filesChanged };
+      return {
+        success: true,
+        headCommit: head,
+        commitSha,
+        filesChanged,
+        branch: task.branch,
+      };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.log(`Task failed: ${reason}`);
@@ -234,16 +322,19 @@ export class AgentController {
     messages: OllamaMessage[],
     task: TaskRecord,
   ): Promise<void> {
-    messages.length = 0;
-    messages.push({
-      role: "system",
-      content: getSystemPrompt(task.mode as TaskMode, "understand"),
-    });
     messages.push({
       role: "user",
-      content: `${contextManager.buildCompactContext(task)}\n\nExplore the repository. List key files, tests, and conventions.`,
+      content: [
+        `Task: ${task.title}`,
+        task.description,
+        contextManager.getPriorHandoff()
+          ? `\nPrior task handoff:\n${contextManager.getPriorHandoff()}`
+          : "",
+        "\nExplore the repository briefly, then summarize what you found.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
     });
-
     await this.runToolLoop(contextManager, toolRegistry, task, "understand", messages, 5);
   }
 
@@ -270,6 +361,7 @@ export class AgentController {
 
     for (let i = 0; i < maxIterations; i++) {
       contextManager.incrementIteration();
+      const iter = contextManager.getIteration();
 
       if (contextManager.shouldCompact(messages.length)) {
         messages.splice(
@@ -282,9 +374,11 @@ export class AgentController {
       const iterationId = this.ctx.db.recordIteration({
         taskId: task.id,
         phase: recordPhase,
-        iterationNum: contextManager.getIteration(),
+        iterationNum: iter,
         promptSummary: messages.at(-1)?.content.slice(0, 200),
       });
+
+      this.log(`iter ${iter} [${phase}]`);
 
       const response = await this.ctx.ollama.chat(messages, tools);
       lastResponse = response.message.content;
@@ -293,7 +387,7 @@ export class AgentController {
       this.ctx.db.recordIteration({
         taskId: task.id,
         phase: recordPhase,
-        iterationNum: contextManager.getIteration(),
+        iterationNum: iter,
         responseSummary: lastResponse.slice(0, 300),
         promptTokens: response.prompt_eval_count,
         completionTokens: response.eval_count,
@@ -301,15 +395,19 @@ export class AgentController {
 
       const toolCalls = response.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
+        this.log(`iter ${iter} [${phase}]: (no tools — phase complete)`);
         break;
       }
 
       for (const call of toolCalls) {
         const toolName = call.function.name;
         const args = call.function.arguments;
+        const argHint = summarizeToolArgs(toolName, args);
+        this.log(`iter ${iter} [${phase}]: ${toolName}${argHint}`);
         const start = Date.now();
         const result = await toolRegistry.execute(toolName, args);
         const durationMs = Date.now() - start;
+        this.log(`  → ${toolName} ${durationMs}ms`);
 
         this.ctx.db.recordToolCall({
           taskId: task.id,
@@ -325,13 +423,13 @@ export class AgentController {
           filesChanged.push(p);
           contextManager.addFileChanged(p);
         }
-        if (["read_file", "list_directory", "search_files"].includes(toolName) && args.path) {
+        if (toolName === "read_file" && args.path) {
           contextManager.addFileExamined(String(args.path));
         }
 
         messages.push({
           role: "tool",
-          content: result,
+          content: result.slice(0, this.ctx.config.limits.maxOutputBytes),
           tool_name: toolName,
         });
       }
@@ -411,5 +509,21 @@ export class AgentController {
 
   private log(line: string): void {
     this.ctx.onLog?.(line);
+  }
+}
+
+function summarizeToolArgs(toolName: string, args: Record<string, unknown>): string {
+  const pathArg = args.path ?? args.file ?? args.command ?? args.pattern;
+  if (pathArg === undefined) return "";
+  const s = String(pathArg);
+  return ` ${s.length > 80 ? `${s.slice(0, 77)}...` : s}`;
+}
+
+function hasWorkingTreeChanges(worktreePath: string): boolean {
+  try {
+    const status = gitExec(["status", "--porcelain"], worktreePath);
+    return status.trim().length > 0;
+  } catch {
+    return false;
   }
 }

@@ -286,6 +286,28 @@ export class MacaiDatabase {
       .all(runId) as TaskRecord[];
   }
 
+  cancelQueuedTasks(runId: string, reason: string): number {
+    const result = this.db
+      .prepare(
+        `UPDATE tasks SET status = 'cancelled', failure_reason = ?, ended_at = ?
+         WHERE run_id = ? AND status = 'queued'`,
+      )
+      .run(reason, new Date().toISOString(), runId);
+    return result.changes;
+  }
+
+  getRecentTasksForProject(projectId: number, limit = 12): TaskRecord[] {
+    return this.db
+      .prepare(
+        `SELECT t.* FROM tasks t
+         JOIN runs r ON r.id = t.run_id
+         WHERE r.project_id = ?
+         ORDER BY t.created_at DESC
+         LIMIT ?`,
+      )
+      .all(projectId, limit) as TaskRecord[];
+  }
+
   getIncompleteTasks(): TaskRecord[] {
     return this.db
       .prepare(
