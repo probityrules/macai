@@ -348,16 +348,32 @@ export class AgentController {
   ): Promise<{ messages: OllamaMessage[]; filesChanged: string[]; lastResponse: string }> {
     const filesChanged: string[] = [];
     let lastResponse = "";
+    let idleNudges = 0;
     const tools = toolRegistry.getOllamaTools();
+    const systemContent = getSystemPrompt(task.mode as TaskMode, phase);
 
     if (messages.length === 0 || messages[0].role !== "system") {
-      messages.unshift({
-        role: "system",
-        content: getSystemPrompt(task.mode as TaskMode, phase),
-      });
+      messages.unshift({ role: "system", content: systemContent });
+    } else {
+      // Always refresh system rules for the current phase (e.g. understand → work).
+      messages[0] = { role: "system", content: systemContent };
     }
 
     const recordPhase: AgentPhase = phase === "investigate" ? "work" : phase;
+    const requiresMutatingTools = phase === "work";
+
+    if (requiresMutatingTools) {
+      messages.push({
+        role: "user",
+        content: [
+          `Begin WORK for: ${task.title}`,
+          task.description,
+          "",
+          "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
+          "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
+        ].join("\n"),
+      });
+    }
 
     for (let i = 0; i < maxIterations; i++) {
       contextManager.incrementIteration();
@@ -369,6 +385,12 @@ export class AgentController {
           messages.length,
           ...contextManager.compactMessages(messages, task),
         );
+        // Restore current-phase system prompt after compaction.
+        if (messages[0]?.role === "system") {
+          messages[0].content = systemContent;
+        } else {
+          messages.unshift({ role: "system", content: systemContent });
+        }
       }
 
       const iterationId = this.ctx.db.recordIteration({
@@ -395,6 +417,18 @@ export class AgentController {
 
       const toolCalls = response.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
+        if (requiresMutatingTools && filesChanged.length === 0 && idleNudges < 3) {
+          idleNudges += 1;
+          this.log(`iter ${iter} [${phase}]: (no tools — nudging to write)`);
+          messages.push({
+            role: "user",
+            content:
+              "That response used no tools and changed no files. " +
+              "Immediately call write_file or edit_file to create/update the required files for this task. " +
+              "Text-only replies are not allowed in the work phase.",
+          });
+          continue;
+        }
         this.log(`iter ${iter} [${phase}]: (no tools — phase complete)`);
         break;
       }
