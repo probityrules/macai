@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { execa } from "execa";
 import type { AppConfig, ShellCommandKind } from "../config/types.js";
 import { ShellGuard, truncateOutput } from "../security/ShellGuard.js";
@@ -9,6 +8,7 @@ import type { ToolContext, ToolDefinition } from "./types.js";
 import { createFileTools } from "./FileTools.js";
 import { createGitTools } from "./GitTools.js";
 import { createTestTools } from "./TestTools.js";
+import { gitExecFile } from "../git/gitBinary.js";
 
 export class ToolRegistry {
   private tools: Map<string, ToolDefinition> = new Map();
@@ -162,5 +162,5 @@ export function resolveWorktreePath(worktreeRoot: string, filePath: string): str
 }
 
 export function gitExec(args: string[], cwd: string): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  return gitExecFile(args, { cwd });
 }

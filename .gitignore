@@ -1,8 +1,10 @@
 /sample-project/
 /sample-tasks.yaml
+node_modules/
 dist/
 *.log
 .env
 .macai/
 coverage/
 *.tsbuildinfo
+.vite/

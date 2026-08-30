@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { getMacaiDbPath, getMacaiDir } from "../config/Config.js";
 import type { AppConfig } from "../config/types.js";
 import { MacaiDatabase } from "../persistence/Database.js";
 import { RepoDetector } from "../repo/RepoDetector.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
+import { gitExecFile } from "../git/gitBinary.js";
 
 const PATH_IN_PROMPT =
   /(?:^|[\s"'`(=])((?:\.?[\w.-]+[\\/])+[\w.-]+\.[\w]+|(?:\.macai|\.\/|\.\.\/)[^\s"'`)]+)/gi;
@@ -44,11 +44,7 @@ function listDirNames(dir: string, max = 40): string[] {
 
 function gitPorcelain(repoPath: string, maxLines = 20): string {
   try {
-    const out = execFileSync("git", ["status", "--porcelain"], {
-      cwd: repoPath,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
+    const out = gitExecFile(["status", "--porcelain"], { cwd: repoPath });
     if (!out) return "clean";
     const lines = out.split("\n");
     const shown = lines.slice(0, maxLines).join("\n");

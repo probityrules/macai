@@ -411,13 +411,22 @@ export class JobManager {
         db.updateTask(task.id, { status: "blocked", failure_reason: "No worktree found" });
         continue;
       }
-      const status = worktreeManager.getWorktreeStatus(task.worktree_path);
-      if (!status.clean) {
+      try {
+        const status = worktreeManager.getWorktreeStatus(task.worktree_path);
+        if (!status.clean) {
+          db.recordObservation({
+            taskId: task.id,
+            kind: "recovery",
+            confidence: "medium",
+            message: `Interrupted task with dirty worktree: ${status.modified.join(", ")}`,
+          });
+        }
+      } catch (err) {
         db.recordObservation({
           taskId: task.id,
           kind: "recovery",
-          confidence: "medium",
-          message: `Interrupted task with dirty worktree: ${status.modified.join(", ")}`,
+          confidence: "low",
+          message: `Could not inspect worktree during recovery: ${err instanceof Error ? err.message : String(err)}`,
         });
       }
       db.updateTask(task.id, {

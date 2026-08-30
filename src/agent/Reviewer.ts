@@ -6,11 +6,19 @@ export class Reviewer {
 
   async review(taskTitle: string, diffSummary: string): Promise<{ approved: boolean; feedback: string }> {
     const trimmed = diffSummary.trim();
-    if (!trimmed) {
+    const hasDeliverablePath =
+      /\b(src|tests|templates|\.github)\//i.test(trimmed) ||
+      /\b(README\.md|package\.json|vitest\.config|tsconfig)/i.test(trimmed);
+    const emptyOrNoise =
+      !trimmed ||
+      (!hasDeliverablePath &&
+        (/\(empty\)/i.test(trimmed) || /node_modules|\.vite\/vitest|results\.json/i.test(trimmed)));
+
+    if (emptyOrNoise) {
       return {
         approved: false,
         feedback:
-          "REJECTED: Diff is empty. No files were changed. Use write_file or edit_file to implement the task, then review again.",
+          "REJECTED: Diff has no meaningful source changes. Use write_file or edit_file to implement the task, then review again.",
       };
     }
 
@@ -18,7 +26,7 @@ export class Reviewer {
       {
         role: "system",
         content:
-          "You are a code review assistant. Be strict but fair. Never approve an empty diff. " +
+          "You are a code review assistant. Be strict but fair. Never approve an empty or cache-only diff. " +
           "If the diff implements the task and looks safe, respond APPROVED. " +
           "Only REJECT when there is a concrete defect.",
       },

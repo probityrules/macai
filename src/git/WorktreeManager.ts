@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { getTaskDir } from "../config/Config.js";
 import type { WorktreeInfo, CreateWorktreeOptions } from "../config/types.js";
 import { detachWorktreeNodeModules } from "../repo/RepoDetector.js";
+import { gitExecFile } from "./gitBinary.js";
 
 export class WorktreeManager {
   constructor(private repoPath: string) {
@@ -14,11 +14,7 @@ export class WorktreeManager {
   }
 
   private git(args: string[], cwd = this.repoPath): string {
-    return execFileSync("git", args, {
-      cwd,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
+    return gitExecFile(args, { cwd });
   }
 
   getCurrentBranch(): string {

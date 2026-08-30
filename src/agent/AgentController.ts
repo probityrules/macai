@@ -168,11 +168,7 @@ export class AgentController {
             };
           }
 
-          if (
-            !readOnly &&
-            filesChanged.length === 0 &&
-            !hasWorkingTreeChanges(worktreePath)
-          ) {
+          if (!readOnly && filesChanged.length === 0) {
             emptyWorkNudges += 1;
             if (emptyWorkNudges > 3) {
               db.updateTask(task.id, {
@@ -214,12 +210,12 @@ export class AgentController {
             };
           }
 
-          // After a review rejection, if no new edits and tests already passed, commit anyway.
+          // After repeated review rejects with real agent edits + green tests, commit anyway.
           if (
             reviewRejectCycles > 0 &&
             workResult.filesChanged.length === 0 &&
-            testsPassed &&
-            hasWorkingTreeChanges(worktreePath)
+            filesChanged.length > 0 &&
+            testsPassed
           ) {
             this.log("No new changes after review rejection — proceeding to commit");
             phase = "commit";
@@ -320,13 +316,26 @@ export class AgentController {
           if (
             reviewRejectCycles > maxReviewRejectCycles &&
             testsPassed &&
-            hasWorkingTreeChanges(worktreePath)
+            filesChanged.length > 0
           ) {
             this.log(
               `Review rejected ${reviewRejectCycles} times but tests passed — proceeding to commit`,
             );
             phase = "commit";
             continue;
+          }
+
+          if (reviewRejectCycles > maxReviewRejectCycles && filesChanged.length === 0) {
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: "Review rejected and no agent file changes to commit",
+              ended_at: new Date().toISOString(),
+            });
+            return {
+              success: false,
+              failureReason: "Review rejected and no agent file changes to commit",
+              filesChanged,
+            };
           }
 
           messages.push({
@@ -338,6 +347,19 @@ export class AgentController {
         }
 
         if (phase === "commit") {
+          if (filesChanged.length === 0) {
+            db.updateTask(task.id, {
+              status: "failed",
+              failure_reason: "Refusing commit with no agent file changes",
+              ended_at: new Date().toISOString(),
+            });
+            return {
+              success: false,
+              failureReason: "Refusing commit with no agent file changes",
+              filesChanged,
+            };
+          }
+
           const commitMessage = `macai: ${task.title}\n\nTask: ${task.id}\nAgent: ${this.ctx.ollama.getModel()}`;
           const result = await toolRegistry.execute("git_commit", { message: commitMessage });
           const parsed = JSON.parse(result) as { sha?: string; error?: string };
@@ -454,28 +476,19 @@ export class AgentController {
 
     const recordPhase: AgentPhase = phase === "investigate" ? "work" : phase;
     const requiresMutatingTools = phase === "work";
-    const alreadyDirty = requiresMutatingTools && hasWorkingTreeChanges(this.ctx.worktreePath);
 
     if (requiresMutatingTools) {
       messages.push({
         role: "user",
-        content: alreadyDirty
-          ? [
-              `Continue WORK for: ${task.title}`,
-              task.description,
-              "",
-              "There are already uncommitted changes in the worktree.",
-              "If tests failed, fix the failure (install deps, adjust code/tests) — do not rewrite unrelated files.",
-              "Use tools. Call run_tests after fixes. When ready, finish so review/commit can proceed.",
-            ].join("\n")
-          : [
-              `Begin WORK for: ${task.title}`,
-              task.description,
-              "",
-              "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
-              "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
-              "Note: only root /sample-project/ is gitignored — files under templates/ are tracked.",
-            ].join("\n"),
+        content: [
+          `Begin WORK for: ${task.title}`,
+          task.description,
+          "",
+          "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
+          "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
+          "Ignore node_modules, coverage, and cache files — they are not task deliverables.",
+          "Note: only root /sample-project/ is gitignored — files under templates/ are tracked.",
+        ].join("\n"),
       });
     }
 
@@ -521,9 +534,7 @@ export class AgentController {
 
       const toolCalls = response.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
-        const dirty =
-          filesChanged.length > 0 || hasWorkingTreeChanges(this.ctx.worktreePath);
-        if (requiresMutatingTools && !dirty && idleNudges < 3) {
+        if (requiresMutatingTools && filesChanged.length === 0 && idleNudges < 3) {
           idleNudges += 1;
           this.log(`iter ${iter} [${phase}]: (no tools — nudging to write)`);
           messages.push({
