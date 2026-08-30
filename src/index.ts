@@ -15,6 +15,8 @@ import { ReportGenerator } from "./reporting/ReportGenerator.js";
 import { synthesizeInvestigationReport } from "./reporting/synthesizeInvestigationReport.js";
 import { runMacaiStart } from "./cli/runStart.js";
 import { runPromptCommand } from "./cli/promptCommand.js";
+import { runCleanupCommand } from "./cli/cleanupCommand.js";
+import { runReviewCommand } from "./cli/reviewCommand.js";
 import { resolveRepo } from "./cli/repoOption.js";
 
 const DEFAULT_REPO = process.cwd();
@@ -212,6 +214,38 @@ tasksCmd
       process.exit(1);
     } finally {
       db.close();
+    }
+  });
+
+program
+  .command("cleanup")
+  .description("Remove orphaned macai worktrees/branches and prune empty task dirs")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .option("--dry-run", "Show what would be removed without deleting")
+  .option("--no-prune-tasks", "Skip pruning .macai/tasks dirs without reports")
+  .action(async (opts) => {
+    try {
+      await runCleanupCommand(resolveRepo(opts.repo), {
+        dryRun: opts.dryRun,
+        pruneTasks: opts.pruneTasks !== false,
+      });
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("review")
+  .description("Show task status, branch, worktree, and investigation report preview")
+  .argument("<task-id>", "Task ID")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .action(async (taskId: string, opts) => {
+    try {
+      await runReviewCommand(taskId, resolveRepo(opts.repo));
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
     }
   });
 

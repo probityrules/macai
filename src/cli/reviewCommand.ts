@@ -1,128 +1,74 @@
-import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
-import { getMacaiDir, getTaskDir } from "../config/Config.js";
-import { WorktreeManager } from "../git/WorktreeManager.js";
+import { getMacaiDbPath, getTaskDir } from "../config/Config.js";
+import { gitExecFile } from "../git/gitBinary.js";
+import { previewReport } from "../helpers/cleanup-helpers.js";
 import { MacaiDatabase } from "../persistence/Database.js";
 
-export async function runReviewCommand(taskId: string, repoPath: string) {
-  console.log(`Running macai review for task: ${taskId}`);
-  console.log("");
-
-  const macaiDir = getMacaiDir(repoPath);
-  if (!fs.existsSync(macaiDir)) {
-    console.log("No macai directory found.");
-    return;
+export function formatTaskReview(
+  task: {
+    id: string;
+    status: string;
+    mode: string;
+    title: string;
+    branch: string | null;
+    worktree_path: string | null;
+  },
+  reportPreview: string,
+  gitSummary?: { lastCommit?: string; diffStat?: string },
+): string {
+  const lines = [
+    `Task: ${task.id}`,
+    `Status: ${task.status}`,
+    `Mode: ${task.mode}`,
+    `Title: ${task.title}`,
+    `Branch: ${task.branch ?? "N/A"}`,
+    `Worktree: ${task.worktree_path ?? "N/A"}`,
+    "",
+    "Investigation report preview:",
+    reportPreview,
+  ];
+  if (gitSummary?.lastCommit) {
+    lines.push("", "Last commit:", gitSummary.lastCommit);
   }
-
-  // Get the task directory
-  const taskDir = getTaskDir(macaiDir, taskId);
-  if (!fs.existsSync(taskDir)) {
-    console.log(`Task directory not found: ${taskDir}`);
-    return;
+  if (gitSummary?.diffStat) {
+    lines.push("", "Diff vs main:", gitSummary.diffStat);
   }
+  return lines.join("\n");
+}
 
-  // Check if this is a coding task (has worktree) or investigation task
-  const dbPath = path.join(macaiDir, "database.sqlite");
+export async function runReviewCommand(taskId: string, repoPath: string): Promise<void> {
+  const dbPath = getMacaiDbPath(repoPath);
   if (!fs.existsSync(dbPath)) {
-    console.log("No database found.");
+    console.log("No macai database found.");
     return;
   }
 
   const db = new MacaiDatabase(dbPath);
-  const projectId = db.getOrCreateProject(repoPath);
-  const run = db.getLatestRun(projectId);
-  
-  if (!run) {
-    console.log("No runs found.");
-    db.close();
-    return;
-  }
-
-  // Get task info from database
-  const task = db.getTaskById(taskId);
+  const task = db.getTask(taskId);
   if (!task) {
     console.log(`Task not found: ${taskId}`);
     db.close();
     return;
   }
 
-  // Print basic task information
-  console.log("Task Information:");
-  console.log("=================");
-  console.log(`Status:     ${task.status}`);
-  console.log(`Mode:       ${task.mode}`);
-  console.log(`Title:      ${task.title}`);
-  console.log(`Branch:     ${task.branch ?? "N/A"}`);
-  console.log(`Worktree:   ${task.worktree_path ?? "N/A"}`);
-  console.log("");
+  const reportPath = path.join(getTaskDir(repoPath, taskId), "investigation-report.md");
+  const reportPreview = previewReport(reportPath);
 
-  // If it's a coding task, show git information
-  if (task.mode === "coding" && task.branch) {
-    const worktreePath = task.worktree_path;
-    
-    if (worktreePath && fs.existsSync(worktreePath)) {
-      console.log("Worktree Information:");
-      console.log("=====================");
-      console.log(`Path:       ${worktreePath}`);
-      
-      // Get git log -1
-      try {
-        const wt = new WorktreeManager(worktreePath);
-        const currentBranch = wt.getCurrentBranch();
-        console.log(`Branch:     ${currentBranch}`);
-        
-        // Show git log -1
-        const logOutput = wt.git(["log", "-1", "--oneline"]);
-        console.log("Last commit:");
-        console.log(logOutput.trim());
-        
-        // Show diffstat vs main if branch exists
-        try {
-          const hasMainBranch = wt.git(["branch", "--list", "main"]).trim() !== "";
-          if (hasMainBranch) {
-            const diffStat = wt.git(["diff", "--stat", "main"]);
-            console.log("Diff vs main:");
-            console.log(diffStat.trim());
-          } else {
-            console.log("No main branch found for diff comparison");
-          }
-        } catch (err) {
-          console.log("Could not get diff vs main:", err instanceof Error ? err.message : String(err));
-        }
-      } catch (err) {
-        console.log("Could not get git information:", err instanceof Error ? err.message : String(err));
-      }
-    } else {
-      console.log("Worktree path does not exist:", worktreePath);
+  let gitSummary: { lastCommit?: string; diffStat?: string } | undefined;
+  if (task.branch) {
+    try {
+      gitSummary = {
+        lastCommit: gitExecFile(["log", "-1", "--oneline", task.branch], { cwd: repoPath }),
+        diffStat: gitExecFile(["diff", "--stat", "main...HEAD"], {
+          cwd: task.worktree_path && fs.existsSync(task.worktree_path) ? task.worktree_path : repoPath,
+        }),
+      };
+    } catch {
+      // git info optional
     }
   }
 
-  // Show investigation report if exists
-  const investigationReportPath = path.join(taskDir, "investigation-report.md");
-  if (fs.existsSync(investigationReportPath)) {
-    console.log("\nInvestigation Report:");
-    console.log("=====================");
-    const reportContent = fs.readFileSync(investigationReportPath, "utf8");
-    console.log(reportContent);
-  } else {
-    console.log("\nNo investigation report found for this task.");
-  }
-
+  console.log(formatTaskReview(task, reportPreview, gitSummary));
   db.close();
-}
-
-export function reviewCommand(): Command {
-  return new Command()
-    .command("review <task-id>")
-    .description("Review a specific task by ID")
-    .option("--repo <path>", "Path to the git repository", process.cwd())
-    .action(async (taskId: string, opts) => {
-      try {
-        await runReviewCommand(taskId, opts.repo);
-      } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : err);
-        process.exit(1);
-      }
-    });
 }

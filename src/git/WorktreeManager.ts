@@ -94,6 +94,10 @@ export class WorktreeManager {
 
   removeWorktree(taskId: string, force = false): void {
     const worktreePath = path.join(getTaskDir(this.repoPath, taskId), "worktree");
+    this.removeWorktreeAt(worktreePath, force);
+  }
+
+  removeWorktreeAt(worktreePath: string, force = false): void {
     if (!fs.existsSync(worktreePath)) return;
 
     // Critical: linked node_modules must be detached before recursive delete.
