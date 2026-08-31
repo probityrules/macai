@@ -61,12 +61,21 @@ export function createFileTools(
       },
       execute: async (args) => {
         if (readOnly) return JSON.stringify({ error: "Write operations disabled in read-only mode" });
-        const filePath = String(args.path);
+        const filePath = String(args.path ?? "");
+        if (!filePath) {
+          return JSON.stringify({ error: "write_file requires path" });
+        }
+        if (typeof args.content !== "string") {
+          return JSON.stringify({
+            error:
+              "write_file requires string content. Call again with both path and content parameters (do not omit content).",
+          });
+        }
         shellGuard.validatePath(filePath, ctx.worktreePath);
         const resolved = resolveWorktreePath(ctx.worktreePath, filePath);
         fs.mkdirSync(path.dirname(resolved), { recursive: true });
-        fs.writeFileSync(resolved, String(args.content), "utf8");
-        return JSON.stringify({ success: true, path: filePath });
+        fs.writeFileSync(resolved, args.content, "utf8");
+        return JSON.stringify({ success: true, path: filePath, bytes: Buffer.byteLength(args.content, "utf8") });
       },
     },
     {

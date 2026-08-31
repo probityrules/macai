@@ -36,8 +36,19 @@ describe("foo", () => {
     expect(String(calls[0].function.arguments.content)).toContain('expect(1).toBe(1)');
   });
 
-  it("returns empty for plain text", () => {
-    expect(parseEmbeddedToolCalls("No tools here.")).toEqual([]);
+  it("parses parameter name= attribute form", () => {
+    const content = `<function=write_file>
+<parameter name="path">tests/x.test.ts</parameter>
+<parameter name="content">export {}</parameter>
+</function>`;
+    expect(parseEmbeddedToolCalls(content)).toEqual([
+      {
+        function: {
+          name: "write_file",
+          arguments: { path: "tests/x.test.ts", content: "export {}" },
+        },
+      },
+    ]);
   });
 });
 

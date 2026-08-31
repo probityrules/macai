@@ -90,7 +90,7 @@ export class AgentController {
     let testFixCycles = 0;
     let reviewRejectCycles = 0;
     let testsPassed = false;
-    const maxTestFixCycles = 3;
+    const maxTestFixCycles = 5;
     const maxReviewRejectCycles = 3;
 
     try {
@@ -277,8 +277,13 @@ export class AgentController {
             content:
               `Tests failed (fix attempt ${testFixCycles}/${maxTestFixCycles}). Analyze and fix.\n` +
               `${testResult.output.slice(0, 4000)}\n\n` +
-              "Focus on fixing the test failure. Do not rewrite unrelated sample/docs files. " +
-              "If the failure is environmental (missing deps), run the install command then re-test.",
+              "You MUST call write_file or edit_file with REAL file content to fix failures.\n" +
+              "Rules:\n" +
+              "- New unit tests belong under tests/*.test.ts (vitest include pattern). Do not put them under src/**/__tests__.\n" +
+              "- write_file requires BOTH path and content (string). Omitting content is an error.\n" +
+              "- If a test file shows 'No test suite found', rewrite it with a full describe/it suite.\n" +
+              "- Do not rewrite unrelated sample/docs files.\n" +
+              "- If the failure is environmental (missing deps), run the install command then re-test.",
           });
           continue;
         }
@@ -486,6 +491,8 @@ export class AgentController {
           task.description,
           "",
           "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
+          "write_file requires BOTH path and content string parameters — never omit content.",
+          "Put new Vitest files under tests/*.test.ts only.",
           "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
           "Ignore node_modules, coverage, and cache files — they are not task deliverables.",
           "Note: only root /sample-project/ is gitignored — files under templates/ are tracked.",
@@ -572,9 +579,16 @@ export class AgentController {
         });
 
         if (["write_file", "edit_file"].includes(toolName) && args.path) {
-          const p = String(args.path);
-          filesChanged.push(p);
-          contextManager.addFileChanged(p);
+          try {
+            const parsed = JSON.parse(result) as { success?: boolean; error?: string };
+            if (!parsed.error && parsed.success !== false) {
+              const p = String(args.path);
+              filesChanged.push(p);
+              contextManager.addFileChanged(p);
+            }
+          } catch {
+            // ignore parse errors
+          }
         }
         if (toolName === "read_file" && args.path) {
           contextManager.addFileExamined(String(args.path));

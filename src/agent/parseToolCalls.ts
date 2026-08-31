@@ -5,11 +5,15 @@ import type { OllamaToolCall } from "../ollama/OllamaClient.js";
  * content instead of Ollama's native tool_calls array. Parse those so the agent
  * can still execute tools.
  *
- * Supported shape:
+ * Supported shapes:
  *   <function=name>
  *   <parameter=key>
  *   value
  *   </parameter>
+ *   </function>
+ *
+ *   <function=name>
+ *   <parameter name="key">value</parameter>
  *   </function>
  */
 export function parseEmbeddedToolCalls(content: string): OllamaToolCall[] {
@@ -22,10 +26,29 @@ export function parseEmbeddedToolCalls(content: string): OllamaToolCall[] {
     const name = match[1];
     const body = match[2] ?? "";
     const args: Record<string, unknown> = {};
+
     const paramRe = /<parameter=([a-zA-Z0-9_]+)>\s*([\s\S]*?)\s*<\/parameter>/g;
     for (const param of body.matchAll(paramRe)) {
       args[param[1]] = coerceArgValue(param[2].trim());
     }
+
+    const namedParamRe = /<parameter\s+name=["']([a-zA-Z0-9_]+)["']>\s*([\s\S]*?)\s*<\/parameter>/g;
+    for (const param of body.matchAll(namedParamRe)) {
+      args[param[1]] = coerceArgValue(param[2].trim());
+    }
+
+    // Some models put a JSON object as the function body
+    if (Object.keys(args).length === 0) {
+      const jsonBody = body.trim();
+      if (jsonBody.startsWith("{") && jsonBody.endsWith("}")) {
+        try {
+          Object.assign(args, JSON.parse(jsonBody) as Record<string, unknown>);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     calls.push({ function: { name, arguments: args } });
   }
 
