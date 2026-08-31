@@ -1,22 +1,22 @@
 tasks:
-  - title: Add parser tests
+  - title: Implement new CLI command
     description: |
-      Add comprehensive tests for transcriptToJSON.
-      Follow the existing testing conventions.
+      Add a new CLI command to macai for managing task queues.
+      Follow existing command patterns and conventions.
       Do not modify production behavior unless necessary.
     mode: coding
     priority: 10
 
   - title: Review error handling
     description: |
-      Review API error handling and identify obvious bugs.
+      Review macai's error handling and identify obvious bugs.
       Fix high-confidence issues and add tests.
     mode: coding
     priority: 9
 
   - title: Review TODOs
     description: |
-      Find TODO comments in src/.
+      Find TODO comments in src/ directory.
       Determine which appear actionable.
       Produce a report.
       Do not modify code for this task.
