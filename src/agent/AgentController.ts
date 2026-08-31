@@ -147,6 +147,7 @@ export class AgentController {
             task.mode === "investigation" ? "investigate" : phase,
             messages,
             task.mode === "investigation" ? 10 : 15,
+            { forceMutatingTools: testFixCycles > 0 },
           );
           messages = workResult.messages;
           filesChanged = [...new Set([...filesChanged, ...workResult.filesChanged])];
@@ -481,10 +482,11 @@ export class AgentController {
     phase: AgentPhase | "investigate",
     messages: OllamaMessage[],
     maxIterations = 15,
+    opts?: { forceMutatingTools?: boolean },
   ): Promise<{ messages: OllamaMessage[]; filesChanged: string[]; lastResponse: string }> {
     const filesChanged: string[] = [];
     let lastResponse = "";
-    let idleNudges = 0;
+    let idleNudges = opts?.forceMutatingTools ? 1 : 0;
     const allTools = toolRegistry.getOllamaTools();
     let tools = allTools;
     const systemContent = getSystemPrompt(task.mode as TaskMode, phase);
