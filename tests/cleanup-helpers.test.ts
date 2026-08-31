@@ -7,10 +7,12 @@ import {
   taskIdFromMacaiWorktree,
   hasNonEmptyReport,
   selectOrphanedWorktrees,
-  selectTasksWithoutReport,
+  selectPrunableTaskDirs,
+  selectStaleWorktreeDirs,
   previewReport,
 } from "../src/helpers/cleanup-helpers.js";
 import { formatTaskReview } from "../src/cli/reviewCommand.js";
+import { checkCoveragePackages } from "../src/helpers/doctor-checks.js";
 
 describe("cleanup-helpers", () => {
   let tmp: string;
@@ -45,17 +47,39 @@ describe("cleanup-helpers", () => {
     expect(orphaned).toEqual([path.join(tmp, ".macai", "tasks", "missing", "worktree")]);
   });
 
-  it("selects task dirs without non-empty reports", () => {
+  it("selects stale worktree dirs not registered in git", () => {
+    const taskDir = path.join(tmp, ".macai", "tasks", "abc123");
+    const wt = path.join(taskDir, "worktree");
+    fs.mkdirSync(wt, { recursive: true });
+    const stale = selectStaleWorktreeDirs(tmp, []);
+    expect(stale).toEqual([wt]);
+  });
+
+  it("keeps task dirs with reports unless force", () => {
     const withReport = path.join(tmp, ".macai", "tasks", "has-report");
-    const emptyReport = path.join(tmp, ".macai", "tasks", "empty-report");
+    const empty = path.join(tmp, ".macai", "tasks", "empty");
     fs.mkdirSync(withReport, { recursive: true });
-    fs.mkdirSync(emptyReport, { recursive: true });
+    fs.mkdirSync(empty, { recursive: true });
     fs.writeFileSync(path.join(withReport, "investigation-report.md"), "# findings\n");
-    fs.writeFileSync(path.join(emptyReport, "investigation-report.md"), "   ");
 
     expect(hasNonEmptyReport(withReport)).toBe(true);
-    expect(hasNonEmptyReport(emptyReport)).toBe(false);
-    expect(selectTasksWithoutReport(tmp)).toEqual([emptyReport]);
+    expect(selectPrunableTaskDirs(tmp)).toEqual([empty]);
+    expect(selectPrunableTaskDirs(tmp, { forceReports: true }).sort()).toEqual(
+      [withReport, empty].sort(),
+    );
+  });
+
+  it("prunes terminal-status coding tasks via db map", () => {
+    const done = path.join(tmp, ".macai", "tasks", "done123");
+    const active = path.join(tmp, ".macai", "tasks", "active456");
+    fs.mkdirSync(done, { recursive: true });
+    fs.mkdirSync(active, { recursive: true });
+
+    const status = new Map([
+      ["done123", "completed"],
+      ["active456", "working"],
+    ]);
+    expect(selectPrunableTaskDirs(tmp, { taskStatusById: status })).toEqual([done]);
   });
 
   it("previewReport truncates long files", () => {
@@ -84,5 +108,13 @@ describe("formatTaskReview", () => {
     expect(out).toContain("completed");
     expect(out).toContain("report preview");
     expect(out).toContain("deadbeef");
+  });
+});
+
+describe("doctor-checks", () => {
+  it("checkCoveragePackages passes when deps installed", () => {
+    const result = checkCoveragePackages(process.cwd());
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
   });
 });

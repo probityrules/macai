@@ -89,6 +89,8 @@ Coding tasks create branches as `macai/<task-hash>`. Your primary working tree i
 | `macai tasks list` | List tasks |
 | `macai report` | Generate report |
 | `macai doctor` | Health check |
+| `macai cleanup` | Remove stale worktrees and prune old task dirs |
+| `macai review <task-id>` | Inspect a task (status, branch, report preview) |
 | `macai cancel` | Cancel instructions |
 
 ### Command Options
@@ -139,6 +141,55 @@ macai doctor [options]
 
 Options:
 - `--repo <path>` - Target repository path (default: current directory)
+
+#### `macai cleanup`
+```bash
+macai cleanup [--dry-run] [--force] [--older-than-days 7] [--no-prune-tasks]
+```
+
+Removes orphaned `macai/*` git worktrees, stale `worktree/` directories left on disk, and prunes `.macai/tasks/<id>/` folders for finished coding runs. **Keeps** task dirs with a non-empty `investigation-report.md` unless `--force` is passed. Uses `database.sqlite` task status when available.
+
+Examples:
+```bash
+macai cleanup --dry-run              # preview removals
+macai cleanup --older-than-days 14   # only prune dirs older than 14 days
+macai review 02343b6b821986f0        # inspect before deleting
+```
+
+#### `macai review`
+```bash
+macai review <task-id> [--repo <path>]
+```
+
+Prints task status, mode, branch, worktree path, investigation-report preview, and recent git info when a branch exists.
+
+## Sample templates
+
+Example assets live under `templates/` (not repo root — `/sample-project/` at the root is gitignored):
+
+- `templates/sample-project/` — minimal project for trying macai
+- `templates/tasks.example.yaml` — example task definitions
+
+Copy or point `--tasks` at the YAML when experimenting.
+
+## Test coverage
+
+```bash
+npm test                 # unit tests
+npm run test:coverage    # tests + v8 coverage summary
+```
+
+CI runs `npm test`, `npm run test:coverage`, and `npm run build` on push/PR to `main`.
+
+## Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| `Ollama: fetch failed` | Start Ollama; check `macai doctor` and `ollama.baseUrl` in config |
+| Run stops immediately | Default is stop-on-failure; inspect `.macai/tasks/*/run.log` |
+| Tests fail in worktree | Worktrees link `node_modules` from main — run `npm install` in the repo root |
+| Git dirty / commit blocked | Coding tasks use isolated worktrees; main branch stays untouched |
+| Many `.macai/tasks/` folders | `macai cleanup --dry-run` — keeps investigation reports by default |
 
 ## Configuration
 
@@ -200,6 +251,7 @@ paths:
 ```bash
 npm run dev -- doctor
 npm test
+npm run test:coverage
 ```
 
 ## Contributing
@@ -212,9 +264,10 @@ We welcome contributions to macai! Here's how you can help improve the project:
 2. Create a feature branch: `git checkout -b feature/your-feature-name`
 3. Make your changes
 4. Run tests: `npm test`
-5. Commit your changes: `git commit -am 'Add some feature'`
-6. Push to the branch: `git push origin feature/your-feature-name`
-7. Create a pull request
+5. Run coverage: `npm run test:coverage`
+6. Commit your changes: `git commit -am 'Add some feature'`
+7. Push to the branch: `git push origin feature/your-feature-name`
+8. Create a pull request
 
 ### Code Guidelines
 

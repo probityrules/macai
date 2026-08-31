@@ -17,6 +17,7 @@ import { runMacaiStart } from "./cli/runStart.js";
 import { runPromptCommand } from "./cli/promptCommand.js";
 import { runCleanupCommand } from "./cli/cleanupCommand.js";
 import { runReviewCommand } from "./cli/reviewCommand.js";
+import { checkCoveragePackages } from "./helpers/doctor-checks.js";
 import { resolveRepo } from "./cli/repoOption.js";
 
 const DEFAULT_REPO = process.cwd();
@@ -222,12 +223,16 @@ program
   .description("Remove orphaned macai worktrees/branches and prune empty task dirs")
   .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .option("--dry-run", "Show what would be removed without deleting")
-  .option("--no-prune-tasks", "Skip pruning .macai/tasks dirs without reports")
+  .option("--no-prune-tasks", "Skip pruning .macai/tasks dirs")
+  .option("--force", "Allow removing task dirs that have investigation reports")
+  .option("--older-than-days <n>", "Only prune task dirs older than N days", parseFloat)
   .action(async (opts) => {
     try {
       await runCleanupCommand(resolveRepo(opts.repo), {
         dryRun: opts.dryRun,
         pruneTasks: opts.pruneTasks !== false,
+        forceReports: opts.force === true,
+        olderThanDays: opts.olderThanDays,
       });
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);
@@ -327,6 +332,14 @@ program
     const macaiDir = getMacaiDir(repo);
     if (fs.existsSync(macaiDir)) {
       console.log(`✓ macai data dir exists: ${macaiDir}`);
+    }
+
+    const coverage = checkCoveragePackages(repo);
+    if (coverage.ok) {
+      console.log("✓ Coverage packages installed (vitest, @vitest/coverage-v8)");
+    } else if (coverage.missing.length > 0) {
+      console.log(`✗ Coverage packages missing: ${coverage.missing.join(", ")}`);
+      console.log("  Run: npm install");
     }
 
     console.log("");
