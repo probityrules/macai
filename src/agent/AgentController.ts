@@ -282,6 +282,8 @@ export class AgentController {
               "- New unit tests belong under tests/*.test.ts (vitest include pattern). Do not put them under src/**/__tests__.\n" +
               "- write_file requires BOTH path and content (string). Omitting content is an error.\n" +
               "- If a test file shows 'No test suite found', rewrite it with a full describe/it suite.\n" +
+              "- If you see 'is not a constructor', fix the mock: use class MockX {} or function MockX() { return {...} }, not an arrow factory.\n" +
+              "- Prefer patterns from tests/ShellGuard.test.ts, tests/RepoDetector.test.ts, and tests/cleanup-helpers.test.ts.\n" +
               "- Do not rewrite unrelated sample/docs files.\n" +
               "- If the failure is environmental (missing deps), run the install command then re-test.",
           });
