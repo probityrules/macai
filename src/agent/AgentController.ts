@@ -193,22 +193,35 @@ export class AgentController {
             continue;
           }
 
-          // After a failed test cycle, require new edits before re-testing.
+          // After a failed test cycle, require new edits before re-testing — but nudge
+          // a few times first instead of failing immediately on a read-only work loop.
           if (
             testFixCycles > 0 &&
             workResult.filesChanged.length === 0 &&
             shouldRunValidation(task.mode)
           ) {
-            db.updateTask(task.id, {
-              status: "failed",
-              failure_reason: "Tests failing and no further file changes made",
-              ended_at: new Date().toISOString(),
+            emptyWorkNudges += 1;
+            if (emptyWorkNudges > 4) {
+              db.updateTask(task.id, {
+                status: "failed",
+                failure_reason: "Tests failing and no further file changes made",
+                ended_at: new Date().toISOString(),
+              });
+              return {
+                success: false,
+                failureReason: "Tests failing and no further file changes made",
+                filesChanged,
+              };
+            }
+            messages.push({
+              role: "user",
+              content:
+                "Tests are still failing and you made no file edits in that work pass. " +
+                "Call write_file or edit_file now to fix the failing tests under tests/*.test.ts. " +
+                "Do not only list/read. Prefer simple temp-dir tests over fragile class mocks.",
             });
-            return {
-              success: false,
-              failureReason: "Tests failing and no further file changes made",
-              filesChanged,
-            };
+            this.log("Tests still failing without edits — continuing work");
+            continue;
           }
 
           // After repeated review rejects with real agent edits + green tests, commit anyway.
