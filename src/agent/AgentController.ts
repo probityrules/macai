@@ -5,6 +5,7 @@ import type { MacaiDatabase, TaskRecord } from "../persistence/Database.js";
 import type { OllamaClient, OllamaMessage } from "../ollama/OllamaClient.js";
 import type { TestResult } from "../config/types.js";
 import { ToolRegistry, gitExec } from "../tools/ToolRegistry.js";
+import { resolveToolCalls } from "./parseToolCalls.js";
 import { ContextManager } from "./ContextManager.js";
 import {
   isReadOnlyMode,
@@ -532,7 +533,8 @@ export class AgentController {
         completionTokens: response.eval_count,
       });
 
-      const toolCalls = response.message.tool_calls ?? [];
+      // qwen3-coder often emits <function=...> XML in content instead of tool_calls.
+      const toolCalls = resolveToolCalls(response.message);
       if (toolCalls.length === 0) {
         if (requiresMutatingTools && filesChanged.length === 0 && idleNudges < 3) {
           idleNudges += 1;
