@@ -42,8 +42,6 @@ macai status
 macai report
 ```
 
-If a run is already active on the repo, additional `macai start` or `macai prompt` invocations are **queued** and run sequentially when the current run finishes. Different repos can run concurrently without interfering with each other.
-
 ### Prompt planning
 
 `macai prompt` builds a **repository assessment** before calling the planner: README excerpt, `src/` listing, git status, existing `.macai` investigation reports, recent task history, and any file paths named in your prompt. The planner prefers reusing that evidence (fewer tasks, start at the first missing deliverable) instead of redundant investigation.
@@ -190,6 +188,20 @@ CI runs `npm test`, `npm run test:coverage`, and `npm run build` on push/PR to `
 | Tests fail in worktree | Worktrees link `node_modules` from main — run `npm install` in the repo root |
 | Git dirty / commit blocked | Coding tasks use isolated worktrees; main branch stays untouched |
 | Many `.macai/tasks/` folders | `macai cleanup --dry-run` — keeps investigation reports by default |
+| Native module build failures | Install build dependencies: `sudo apt-get install python3 make g++` |
+
+When building projects that use native modules like `better-sqlite3`, you may encounter build failures on Linux systems. To resolve this, ensure the following build tools are installed:
+- Python 3
+- Make
+- C++ compiler (g++)
+
+### For CI/CD environments
+
+When running in CI/CD environments or containers, you may need to install additional build dependencies for native modules like `better-sqlite3`. Run:
+
+```bash
+sudo apt-get update && sudo apt-get install -y python3 make g++
+```
 
 ## Configuration
 
@@ -229,7 +241,7 @@ shell:
     - go
   deniedPatterns:
     - "rm -rf"
-    - "curl.*\\\\|"
+    - "curl.*\\\\\\\\|"
     - ssh
     - scp
 
