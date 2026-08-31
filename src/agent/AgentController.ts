@@ -485,7 +485,8 @@ export class AgentController {
     const filesChanged: string[] = [];
     let lastResponse = "";
     let idleNudges = 0;
-    const tools = toolRegistry.getOllamaTools();
+    const allTools = toolRegistry.getOllamaTools();
+    let tools = allTools;
     const systemContent = getSystemPrompt(task.mode as TaskMode, phase);
 
     if (messages.length === 0 || messages[0].role !== "system") {
@@ -531,6 +532,16 @@ export class AgentController {
         } else {
           messages.unshift({ role: "system", content: systemContent });
         }
+      }
+
+      // After idle nudges with no writes, only offer mutating tools so the model
+      // cannot keep listing/reading forever.
+      if (requiresMutatingTools && filesChanged.length === 0 && idleNudges >= 1) {
+        tools = allTools.filter((t) =>
+          ["write_file", "edit_file"].includes(t.function.name),
+        );
+      } else {
+        tools = allTools;
       }
 
       const iterationId = this.ctx.db.recordIteration({
