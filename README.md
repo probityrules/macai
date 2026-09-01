@@ -6,7 +6,7 @@ Local autonomous coding agent using Ollama, Git worktrees, and a task queue.
 
 - Node.js 20+
 - Git 2.5+
-- Ollama server (default: `http://10.0.0.29:11434`)
+- Ollama server (default: `http://127.0.0.1:11434`)
 - Model: `qwen3-coder:latest`
 
 ## Install
@@ -87,7 +87,7 @@ Coding tasks create branches as `macai/<task-hash>`. Your primary working tree i
 | `macai tasks list` | List tasks |
 | `macai report` | Generate report |
 | `macai doctor` | Health check |
-| `macai cleanup` | Remove stale worktrees and prune old task dirs |
+| `macai cleanup` | Remove stale worktrees, run baseline logs, and prune old task dirs |
 | `macai review <task-id>` | Inspect a task (status, branch, report preview) |
 | `macai cancel` | Cancel instructions |
 
@@ -145,7 +145,7 @@ Options:
 macai cleanup [--dry-run] [--force] [--older-than-days 7] [--no-prune-tasks]
 ```
 
-Removes orphaned `macai/*` git worktrees, stale `worktree/` directories left on disk, and prunes `.macai/tasks/<id>/` folders for finished coding runs. **Keeps** task dirs with a non-empty `investigation-report.md` unless `--force` is passed. Uses `database.sqlite` task status when available.
+Removes orphaned `macai/*` git worktrees, stale `worktree/` directories left on disk, run-level `baseline-*.log` files (counts remain in `database.sqlite`), and prunes `.macai/tasks/<id>/` folders for finished coding runs. **Keeps** task dirs with a non-empty `investigation-report.md` unless `--force` is passed. Uses `database.sqlite` task status when available.
 
 Examples:
 ```bash
@@ -188,6 +188,7 @@ CI runs `npm test`, `npm run test:coverage`, and `npm run build` on push/PR to `
 | Tests fail in worktree | Worktrees link `node_modules` from main — run `npm install` in the repo root |
 | Git dirty / commit blocked | Coding tasks use isolated worktrees; main branch stays untouched |
 | Many `.macai/tasks/` folders | `macai cleanup --dry-run` — keeps investigation reports by default |
+| Old `baseline-*.log` files in `.macai/` | `macai cleanup` — removed automatically after each run; cleanup prunes any leftovers |
 | Native module build failures | Install build dependencies: `sudo apt-get install python3 make g++` |
 
 When building projects that use native modules like `better-sqlite3`, you may encounter build failures on Linux systems. To resolve this, ensure the following build tools are installed:
@@ -215,7 +216,7 @@ The configuration file supports the following options:
 provider: ollama
 
 ollama:
-  baseUrl: http://10.0.0.29:11434
+  baseUrl: http://127.0.0.1:11434
   model: qwen3-coder:latest
 
 limits:

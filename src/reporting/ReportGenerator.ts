@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getMacaiDir } from "../config/Config.js";
+import {
+  collectCleanupSummary,
+  formatCleanupSummaryReport,
+  loadTaskStatusMap,
+} from "../helpers/autoCleanup.js";
 import type { MacaiDatabase } from "../persistence/Database.js";
 
 export class ReportGenerator {
@@ -106,6 +111,19 @@ export class ReportGenerator {
     lines.push("2. Inspect branches `macai/<task-hash>` for coding tasks and merge selectively");
     lines.push("3. Verify test results in `.macai/tasks/*/run.log`");
     lines.push("");
+
+    const cleanupSummary = collectCleanupSummary(this.repoPath, {
+      taskStatusById: loadTaskStatusMap(this.repoPath),
+    });
+    const hasCleanup =
+      cleanupSummary.orphanedWorktrees.length +
+        cleanupSummary.staleWorktreeDirs.length +
+        cleanupSummary.prunableTaskDirs.length +
+        cleanupSummary.prunableBaselineLogs.length >
+      0;
+    if (hasCleanup) {
+      lines.push(formatCleanupSummaryReport(cleanupSummary), "");
+    }
 
     const report = lines.join("\n");
     const reportDir = getMacaiDir(this.repoPath);

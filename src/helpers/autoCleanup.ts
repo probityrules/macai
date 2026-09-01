@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getMacaiDir } from "../config/Config.js";
+import { getMacaiDbPath, getMacaiDir } from "../config/Config.js";
+import { WorktreeManager } from "../git/WorktreeManager.js";
+import { MacaiDatabase } from "../persistence/Database.js";
 import {
-  listTaskDirs,
+  type PruneTaskOptions,
   selectOrphanedWorktrees,
+  selectPrunableBaselineLogs,
   selectPrunableTaskDirs,
   selectStaleWorktreeDirs,
 } from "./cleanup-helpers.js";
@@ -12,6 +15,70 @@ export interface CleanupSummary {
   orphanedWorktrees: string[];
   staleWorktreeDirs: string[];
   prunableTaskDirs: string[];
+  prunableBaselineLogs: string[];
+}
+
+export function loadTaskStatusMap(repoPath: string): Map<string, string> | undefined {
+  const dbPath = getMacaiDbPath(repoPath);
+  if (!fs.existsSync(dbPath)) return undefined;
+
+  const db = new MacaiDatabase(dbPath);
+  try {
+    const projectId = db.getOrCreateProject(repoPath);
+    const runs = db.getRecentTasksForProject(projectId, 500);
+    const map = new Map<string, string>();
+    for (const task of runs) map.set(task.id, task.status);
+    return map;
+  } finally {
+    db.close();
+  }
+}
+
+export function loadActiveRunIds(repoPath: string): Set<string> {
+  const dbPath = getMacaiDbPath(repoPath);
+  if (!fs.existsSync(dbPath)) return new Set();
+
+  const db = new MacaiDatabase(dbPath);
+  try {
+    const projectId = db.getOrCreateProject(repoPath);
+    const running = db.getRunningRun(projectId);
+    return running ? new Set([running.id]) : new Set();
+  } finally {
+    db.close();
+  }
+}
+
+export function collectCleanupSummary(
+  repoPath: string,
+  options: PruneTaskOptions = {},
+): CleanupSummary {
+  const keepRunIds = options.keepRunIds ?? loadActiveRunIds(repoPath);
+  const registered = new WorktreeManager(repoPath).listWorktrees();
+  return {
+    orphanedWorktrees: selectOrphanedWorktrees(repoPath, registered),
+    staleWorktreeDirs: selectStaleWorktreeDirs(repoPath, registered),
+    prunableTaskDirs: selectPrunableTaskDirs(repoPath, options),
+    prunableBaselineLogs: selectPrunableBaselineLogs(repoPath, {
+      olderThanDays: options.olderThanDays,
+      keepRunIds,
+      nowMs: options.nowMs,
+    }),
+  };
+}
+
+export function removeBaselineLogs(filePaths: string[]): void {
+  for (const filePath of filePaths) {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      // ignore per-file removal errors
+    }
+  }
+}
+
+export function removeRunBaselineLog(repoPath: string, runId: string): void {
+  const filePath = path.join(getMacaiDir(repoPath), `baseline-${runId}.log`);
+  removeBaselineLogs([filePath]);
 }
 
 /**
@@ -61,72 +128,25 @@ export function formatPrunableTaskDirsSummary(taskDirs: string[]): string {
 }
 
 /**
- * Generates a comprehensive cleanup dry-run summary
+ * Formats a dry-run summary for run-level baseline logs
  */
-export function generateCleanupSummary(repoPath: string): CleanupSummary {
-  // Get all registered worktrees from the repository
-  const macaiDir = getMacaiDir(repoPath);
-  const worktreePaths: string[] = [];
-  
-  // Find all worktree paths in .macai/tasks/*/worktree
-  try {
-    const tasksDir = path.join(macaiDir, "tasks");
-    if (fs.existsSync(tasksDir)) {
-      const taskDirs = fs.readdirSync(tasksDir, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => path.join(tasksDir, dirent.name));
-      
-      for (const taskDir of taskDirs) {
-        const worktreePath = path.join(taskDir, "worktree");
-        if (fs.existsSync(worktreePath)) {
-          worktreePaths.push(worktreePath);
-        }
-      }
-    }
-  } catch (error) {
-    // Ignore errors when reading worktrees
+export function formatPrunableBaselineLogsSummary(logPaths: string[]): string {
+  if (logPaths.length === 0) {
+    return "No run baseline logs to remove.";
   }
 
-  // Get registered worktrees from git
-  const registeredWorktrees: string[] = [];
-  try {
-    const wtManager = new (await import("../git/WorktreeManager.js")).WorktreeManager(repoPath);
-    const worktrees = wtManager.listWorktrees();
-    for (const wt of worktrees) {
-      if (wt.path) {
-        registeredWorktrees.push(wt.path);
-      }
-    }
-  } catch (error) {
-    // Ignore errors when getting registered worktrees
+  const lines = [`Found ${logPaths.length} run baseline log(s):`];
+  for (const logPath of logPaths) {
+    lines.push(`  - ${logPath}`);
   }
-
-  // Find orphaned worktrees (worktree dirs with no matching task directory)
-  const orphanedWorktrees = selectOrphanedWorktrees(repoPath, worktreePaths);
-
-  // Find stale worktree directories (dirs on disk that git no longer registers)
-  const staleWorktreeDirs = selectStaleWorktreeDirs(repoPath, registeredWorktrees);
-
-  // Find prunable task directories
-  const prunableTaskDirs = selectPrunableTaskDirs(repoPath);
-
-  return {
-    orphanedWorktrees,
-    staleWorktreeDirs,
-    prunableTaskDirs,
-  };
+  return lines.join("\n");
 }
 
 /**
  * Formats a complete cleanup dry-run summary report
  */
-export function formatCleanupSummaryReport(repoPath: string): string {
-  const summary = generateCleanupSummary(repoPath);
-  
-  const lines: string[] = [
-    "## Cleanup Suggestions",
-    "",
-  ];
+export function formatCleanupSummaryReport(summary: CleanupSummary): string {
+  const lines: string[] = ["## Cleanup Suggestions", ""];
 
   lines.push("### Orphaned Worktrees");
   lines.push(formatOrphanedWorktreesSummary(summary.orphanedWorktrees));
@@ -138,6 +158,10 @@ export function formatCleanupSummaryReport(repoPath: string): string {
 
   lines.push("### Prunable Task Directories");
   lines.push(formatPrunableTaskDirsSummary(summary.prunableTaskDirs));
+  lines.push("");
+
+  lines.push("### Run Baseline Logs");
+  lines.push(formatPrunableBaselineLogsSummary(summary.prunableBaselineLogs));
   lines.push("");
 
   return lines.join("\n");

@@ -1,15 +1,12 @@
 import fs from "node:fs";
-import path from "node:path";
-import { getMacaiDbPath } from "../config/Config.js";
 import { gitExecFile } from "../git/gitBinary.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
+import { taskIdFromMacaiWorktree } from "../helpers/cleanup-helpers.js";
 import {
-  selectOrphanedWorktrees,
-  selectPrunableTaskDirs,
-  selectStaleWorktreeDirs,
-  taskIdFromMacaiWorktree,
-} from "../helpers/cleanup-helpers.js";
-import { MacaiDatabase } from "../persistence/Database.js";
+  collectCleanupSummary,
+  loadTaskStatusMap,
+  removeBaselineLogs,
+} from "../helpers/autoCleanup.js";
 import { detachWorktreeNodeModules } from "../repo/RepoDetector.js";
 
 export interface CleanupOptions {
@@ -17,22 +14,6 @@ export interface CleanupOptions {
   pruneTasks?: boolean;
   forceReports?: boolean;
   olderThanDays?: number;
-}
-
-function loadTaskStatusMap(repoPath: string): Map<string, string> | undefined {
-  const dbPath = getMacaiDbPath(repoPath);
-  if (!fs.existsSync(dbPath)) return undefined;
-
-  const db = new MacaiDatabase(dbPath);
-  try {
-    const projectId = db.getOrCreateProject(repoPath);
-    const runs = db.getRecentTasksForProject(projectId, 500);
-    const map = new Map<string, string>();
-    for (const task of runs) map.set(task.id, task.status);
-    return map;
-  } finally {
-    db.close();
-  }
 }
 
 export async function runCleanupCommand(repoPath: string, options: CleanupOptions = {}): Promise<void> {
@@ -46,18 +27,16 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
     console.log(`Age filter — only dirs older than ${options.olderThanDays} day(s)\n`);
   }
 
-  const worktreeManager = new WorktreeManager(repoPath);
-  const registered = worktreeManager.listWorktrees();
-  const orphanedWorktrees = selectOrphanedWorktrees(repoPath, registered);
-  const staleWorktreeDirs = selectStaleWorktreeDirs(repoPath, registered);
   const taskStatusById = loadTaskStatusMap(repoPath);
-  const tasksToPrune = pruneTasks
-    ? selectPrunableTaskDirs(repoPath, {
-        forceReports: options.forceReports,
-        olderThanDays: options.olderThanDays,
-        taskStatusById,
-      })
-    : [];
+  const summary = collectCleanupSummary(repoPath, {
+    forceReports: options.forceReports,
+    olderThanDays: options.olderThanDays,
+    taskStatusById,
+  });
+  const orphanedWorktrees = summary.orphanedWorktrees;
+  const staleWorktreeDirs = summary.staleWorktreeDirs;
+  const tasksToPrune = pruneTasks ? summary.prunableTaskDirs : [];
+  const baselineLogsToRemove = summary.prunableBaselineLogs;
 
   console.log(`Orphaned git worktrees (${orphanedWorktrees.length}):`);
   for (const wt of orphanedWorktrees) console.log(`  ${wt}`);
@@ -71,7 +50,13 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
   for (const dir of tasksToPrune) console.log(`  ${dir}`);
   if (tasksToPrune.length === 0) console.log("  (none)");
 
+  console.log(`\nRun baseline logs to remove (${baselineLogsToRemove.length}):`);
+  for (const logPath of baselineLogsToRemove) console.log(`  ${logPath}`);
+  if (baselineLogsToRemove.length === 0) console.log("  (none)");
+
   if (dryRun) return;
+
+  const worktreeManager = new WorktreeManager(repoPath);
 
   for (const worktreePath of orphanedWorktrees) {
     try {
@@ -107,5 +92,10 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
     } catch (err) {
       console.error(`Failed to remove task dir ${taskDir}:`, err);
     }
+  }
+
+  removeBaselineLogs(baselineLogsToRemove);
+  for (const logPath of baselineLogsToRemove) {
+    console.log(`Removed baseline log ${logPath}`);
   }
 }

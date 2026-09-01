@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { AppConfigSchema, type AppConfig, type TaskDefinition, type TasksFile } from "./types.js";
+import {
+  AppConfigSchema,
+  DEFAULT_OLLAMA_BASE_URL,
+  type AppConfig,
+  type TaskDefinition,
+  type TasksFile,
+} from "./types.js";
+
+export { DEFAULT_OLLAMA_BASE_URL };
 
 const DEFAULT_CONFIG: AppConfig = AppConfigSchema.parse({});
 

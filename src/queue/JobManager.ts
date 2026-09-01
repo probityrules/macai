@@ -20,6 +20,7 @@ import { TaskQueue } from "./TaskQueue.js";
 import { Scheduler } from "./Scheduler.js";
 import { RunLock } from "./RunLock.js";
 import { ReportGenerator } from "../reporting/ReportGenerator.js";
+import { removeRunBaselineLog } from "../helpers/autoCleanup.js";
 
 export interface JobManagerOptions extends JobStartOptions {}
 
@@ -382,6 +383,7 @@ export class JobManager {
 
     const reporter = new ReportGenerator(this.db, this.repoPath);
     const reportPath = reporter.generateRunReport(this.runId);
+    removeRunBaselineLog(this.repoPath, this.runId);
     console.log(`\nRun finished (${status}). Report: ${reportPath}`);
     console.log(`Runtime: ${formatDuration(runtimeMs)}`);
   }

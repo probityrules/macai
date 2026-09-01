@@ -100,6 +100,8 @@ export interface PruneTaskOptions {
   olderThanDays?: number;
   /** task id → status from MacaiDatabase */
   taskStatusById?: Map<string, string>;
+  /** run IDs whose baseline-{id}.log should be kept (e.g. active run) */
+  keepRunIds?: Set<string>;
   nowMs?: number;
 }
 
@@ -129,6 +131,46 @@ export function selectPrunableTaskDirs(repoPath: string, options: PruneTaskOptio
 /** @deprecated use selectPrunableTaskDirs */
 export function selectTasksWithoutReport(repoPath: string): string[] {
   return selectPrunableTaskDirs(repoPath);
+}
+
+export function runIdFromBaselineLog(filePath: string): string | null {
+  const normalized = filePath.replace(/\\/g, "/");
+  const match = normalized.match(/\/baseline-([a-f0-9]+)\.log$/i);
+  return match?.[1] ?? null;
+}
+
+/** Run-level baseline logs under .macai/baseline-{runId}.log */
+export function listRunBaselineLogs(repoPath: string): string[] {
+  const macaiDir = getMacaiDir(repoPath);
+  if (!fs.existsSync(macaiDir)) return [];
+
+  return fs
+    .readdirSync(macaiDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && /^baseline-[a-f0-9]+\.log$/i.test(e.name))
+    .map((e) => path.join(macaiDir, e.name));
+}
+
+export function selectPrunableBaselineLogs(
+  repoPath: string,
+  options: Pick<PruneTaskOptions, "olderThanDays" | "keepRunIds" | "nowMs"> = {},
+): string[] {
+  const { olderThanDays, keepRunIds, nowMs = Date.now() } = options;
+  const minAgeMs = olderThanDays !== undefined ? olderThanDays * 86_400_000 : 0;
+
+  return listRunBaselineLogs(repoPath).filter((filePath) => {
+    const runId = runIdFromBaselineLog(filePath);
+    if (runId && keepRunIds?.has(runId)) return false;
+
+    if (olderThanDays !== undefined) {
+      try {
+        if (nowMs - fs.statSync(filePath).mtimeMs < minAgeMs) return false;
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  });
 }
 
 export function previewReport(reportPath: string, maxLines = 12): string {

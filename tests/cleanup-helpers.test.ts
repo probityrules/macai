@@ -9,6 +9,8 @@ import {
   selectOrphanedWorktrees,
   selectPrunableTaskDirs,
   selectStaleWorktreeDirs,
+  selectPrunableBaselineLogs,
+  listRunBaselineLogs,
   previewReport,
 } from "../src/helpers/cleanup-helpers.js";
 import { formatTaskReview } from "../src/cli/reviewCommand.js";
@@ -87,6 +89,20 @@ describe("cleanup-helpers", () => {
     fs.writeFileSync(file, ["line1", "line2", "line3"].join("\n"));
     expect(previewReport(file, 2)).toContain("line1");
     expect(previewReport(file, 2)).toContain("more lines");
+  });
+
+  it("lists and selects prunable run baseline logs", () => {
+    const macaiDir = path.join(tmp, ".macai");
+    fs.mkdirSync(macaiDir, { recursive: true });
+    const keep = path.join(macaiDir, "baseline-abc12345.log");
+    const remove = path.join(macaiDir, "baseline-def67890.log");
+    fs.writeFileSync(keep, "keep\n");
+    fs.writeFileSync(remove, "remove\n");
+
+    expect(listRunBaselineLogs(tmp).sort()).toEqual([keep, remove].sort());
+    expect(
+      selectPrunableBaselineLogs(tmp, { keepRunIds: new Set(["abc12345"]) }).sort(),
+    ).toEqual([remove]);
   });
 });
 

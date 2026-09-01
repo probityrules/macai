@@ -51,8 +51,10 @@ export const AgentPhaseSchema = z.enum([
 
 export type AgentPhase = z.infer<typeof AgentPhaseSchema>;
 
+export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+
 export const OllamaConfigSchema = z.object({
-  baseUrl: z.string().url().default("http://10.0.0.29:11434"),
+  baseUrl: z.string().url().default(DEFAULT_OLLAMA_BASE_URL),
   model: z.string().default("qwen3-coder:latest"),
 });
 
@@ -93,7 +95,7 @@ export const RepoCommandsSchema = z.object({
 export const AppConfigSchema = z.object({
   provider: z.literal("ollama").default("ollama"),
   ollama: OllamaConfigSchema.default({
-    baseUrl: "http://10.0.0.29:11434",
+    baseUrl: DEFAULT_OLLAMA_BASE_URL,
     model: "qwen3-coder:latest",
   }),
   limits: LimitsConfigSchema.default({
