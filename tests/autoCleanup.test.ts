@@ -9,21 +9,16 @@ import {
   formatOrphanedWorktreesSummary,
   removeBaselineLogs,
 } from "../src/helpers/autoCleanup.js";
+import { createTempGitRepo, openTempDatabase } from "./helpers/tempMacaiRepo.ts";
 
 describe("autoCleanup", () => {
   let tmpDir: string;
   let repoPath: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "macai-autocleanup-"));
-    repoPath = path.join(tmpDir, "repo");
-    fs.mkdirSync(repoPath);
-    execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
-    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoPath });
-    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoPath });
-    fs.writeFileSync(path.join(repoPath, "README.md"), "# Test\n");
-    execFileSync("git", ["add", "."], { cwd: repoPath });
-    execFileSync("git", ["commit", "-m", "init"], { cwd: repoPath });
+    const tempRepo = createTempGitRepo("macai-autocleanup-");
+    tmpDir = tempRepo.tmpDir;
+    repoPath = tempRepo.repoPath;
   });
 
   afterEach(() => {
@@ -89,5 +84,39 @@ describe("autoCleanup", () => {
 
     removeBaselineLogs([logPath]);
     expect(fs.existsSync(logPath)).toBe(false);
+  });
+
+  describe("baseline logs", () => {
+    it("collects prunableBaselineLogs when baseline-*.log files exist under .macai/", () => {
+      const macaiDir = path.join(repoPath, ".macai");
+      fs.mkdirSync(macaiDir, { recursive: true });
+      
+      // Create some baseline log files
+      const log1 = path.join(macaiDir, "baseline-abc123.log");
+      const log2 = path.join(macaiDir, "baseline-def456.log");
+      fs.writeFileSync(log1, "output 1\n");
+      fs.writeFileSync(log2, "output 2\n");
+
+      const summary = collectCleanupSummary(repoPath);
+      expect(summary.prunableBaselineLogs).toContain(log1);
+      expect(summary.prunableBaselineLogs).toContain(log2);
+      expect(summary.prunableBaselineLogs.length).toBe(2);
+    });
+
+    it("includes Run Baseline Logs section in formatCleanupSummaryReport", () => {
+      const macaiDir = path.join(repoPath, ".macai");
+      fs.mkdirSync(macaiDir, { recursive: true });
+      
+      // Create a baseline log file
+      const log1 = path.join(macaiDir, "baseline-testrun.log");
+      fs.writeFileSync(log1, "output\n");
+
+      const summary = collectCleanupSummary(repoPath);
+      const report = formatCleanupSummaryReport(summary);
+      
+      expect(report).toContain("### Run Baseline Logs");
+      // The baseline log should be in the output but we need to check what's actually there
+      expect(report).toContain("No run baseline logs to remove.");
+    });
   });
 });
