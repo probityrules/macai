@@ -12,8 +12,10 @@ tasks:
       Add tests/ReportGenerator.test.ts covering generateRunReport with a temp git
       repo and real MacaiDatabase via tests/helpers/tempMacaiRepo.ts
       (createTempGitRepo, openTempDatabase, seedMinimalRun).
-      Assert the report mentions the run id and includes cleanup suggestions when a
-      stale .macai/tasks/*/worktree directory exists.
+      Assert the report mentions the run id and includes "## Cleanup Suggestions"
+      when a stale .macai/tasks/*/worktree directory exists (section title is
+      "Cleanup Suggestions", not "Cleanup Summary").
+      Always call removeTempGitRepo in afterEach (it ignores Windows EPERM).
       Do NOT mock MacaiDatabase. Do NOT rewrite Database.ts or ReportGenerator.ts
       unless a compile error requires a tiny fix. Run npm test before committing.
     mode: coding

@@ -90,7 +90,7 @@ export class AgentController {
     let testFixCycles = 0;
     let reviewRejectCycles = 0;
     let testsPassed = false;
-    const maxTestFixCycles = 5;
+    const maxTestFixCycles = 8;
     const maxReviewRejectCycles = 3;
 
     try {
@@ -250,6 +250,7 @@ export class AgentController {
           this.log(testResult.passed ? "Tests passed" : "Tests failed — returning to work");
           if (testResult.passed) {
             testsPassed = true;
+            testFixCycles = 0;
             phase = "review";
             continue;
           }

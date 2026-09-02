@@ -28,7 +28,11 @@ export function createTempGitRepo(prefix = "macai-test-"): TempGitRepo {
 }
 
 export function removeTempGitRepo(repo: TempGitRepo): void {
-  fs.rmSync(repo.tmpDir, { recursive: true, force: true });
+  try {
+    fs.rmSync(repo.tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  } catch {
+    // Windows can briefly lock temp dirs (EPERM); ignore cleanup failures in tests.
+  }
 }
 
 /** Open a real MacaiDatabase under .macai/ in the temp repo (no vitest mocks). */

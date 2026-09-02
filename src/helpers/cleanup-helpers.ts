@@ -117,8 +117,9 @@ export function selectPrunableTaskDirs(repoPath: string, options: PruneTaskOptio
 
       if (taskStatusById) {
         const status = taskStatusById.get(info.taskId);
-        if (status && !TERMINAL_TASK_STATUSES.has(status)) return false;
-        if (!status && info.hasReport) return false;
+        // Force mode may remove interrupted/in-progress leftover dirs.
+        if (status && !TERMINAL_TASK_STATUSES.has(status) && !forceReports) return false;
+        if (!status && info.hasReport && !forceReports) return false;
       } else if (info.hasReport && !forceReports) {
         return false;
       }

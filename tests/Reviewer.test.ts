@@ -25,6 +25,19 @@ describe("Reviewer", () => {
     expect(chat).not.toHaveBeenCalled();
   });
 
+  it("auto-approves test-only diffs without calling the model", async () => {
+    const chat = vi.fn();
+    const ollama = { chat } as unknown as OllamaClient;
+    const reviewer = new Reviewer(ollama);
+
+    const result = await reviewer.review(
+      "Add ReportGenerator tests",
+      " tests/ReportGenerator.test.ts | 40 ++++++++++++++++++++",
+    );
+    expect(result.approved).toBe(true);
+    expect(chat).not.toHaveBeenCalled();
+  });
+
   it("uses model decision for source code diffs", async () => {
     const chat = vi.fn().mockResolvedValue({
       message: { content: "APPROVED\nLooks good." },

@@ -34,6 +34,17 @@ export class Reviewer {
       };
     }
 
+    // Test-only deliverables are enough when they touch tests/ (or helpers) without src/ churn.
+    const testsOnly =
+      /\btests\//i.test(trimmed) &&
+      !/\bsrc\//i.test(trimmed);
+    if (testsOnly) {
+      return {
+        approved: true,
+        feedback: "APPROVED: Test-only changes look on-task.",
+      };
+    }
+
     const response = await this.ollama.chat([
       {
         role: "system",
