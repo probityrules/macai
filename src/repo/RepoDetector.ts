@@ -256,13 +256,16 @@ export async function ensureWorktreeDependencies(
 /** Remove a linked/junctioned node_modules without deleting the link target. */
 export function detachWorktreeNodeModules(worktreePath: string): void {
   const nm = path.join(worktreePath, "node_modules");
+  let st: fs.Stats;
   try {
-    if (!fs.lstatSync(nm, { throwIfNoEntry: false })) return;
+    st = fs.lstatSync(nm);
   } catch {
     return;
   }
+
+  // Prefer unlink/rmdir of the link itself — never recursive-delete through a junction
+  // (Windows junctions are directories, not always reported as symbolic links).
   try {
-    const st = fs.lstatSync(nm);
     if (st.isSymbolicLink()) {
       fs.unlinkSync(nm);
       return;
@@ -270,17 +273,20 @@ export function detachWorktreeNodeModules(worktreePath: string): void {
   } catch {
     // continue
   }
-  try {
-    if (process.platform === "win32") {
-      execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
-    } else {
-      fs.rmdirSync(nm);
-    }
-  } catch {
+
+  if (process.platform === "win32") {
     try {
-      fs.rmdirSync(nm);
+      // Removes junction or empty directory without descending into the target.
+      execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
+      return;
     } catch {
-      // ignore
+      // fall through
     }
+  }
+
+  try {
+    fs.rmdirSync(nm);
+  } catch {
+    // ignore — caller may still remove the worktree; avoid fs.rmSync(recursive) here
   }
 }

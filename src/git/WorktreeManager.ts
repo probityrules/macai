@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { getTaskDir } from "../config/Config.js";
 import type { WorktreeInfo, CreateWorktreeOptions } from "../config/types.js";
 import { detachWorktreeNodeModules } from "../repo/RepoDetector.js";
@@ -102,6 +103,17 @@ export class WorktreeManager {
 
     // Critical: linked node_modules must be detached before recursive delete.
     detachWorktreeNodeModules(worktreePath);
+    const nm = path.join(worktreePath, "node_modules");
+    if (fs.existsSync(nm)) {
+      // Last-resort: Windows junction remove if still present
+      try {
+        if (process.platform === "win32") {
+          execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     const args = ["worktree", "remove", worktreePath];
     if (force) args.push("--force");
