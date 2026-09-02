@@ -60,9 +60,13 @@ export function buildTestFixHints(output: string): string[] {
       "Use createTestAppConfig() from tests/helpers/tempMacaiRepo.ts for AppConfig (nested ollama/limits/shell/paths). Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' }). Provide several createMockOllama chatResponses.",
     );
   }
-  if (/enqueueAll|TaskDefinition/i.test(output)) {
-    hints.push("enqueueAll takes TaskDefinition[] with title/description/mode/priority — not arbitrary { id, type, status } objects.");
+  if (/JobManager\.createJobManager is not a function/i.test(output) || /createJobManager/i.test(output)) {
+    hints.push(
+      "createJobManager is a named export, not a static method: import { JobManager, createJobManager } from '../src/queue/JobManager.js' then call createJobManager(options). Prefer testing createJobManager construction and JobManager.recoverIncomplete without vi.spyOn(require(...)) — ESM has no require. For recoverIncomplete, seed incomplete investigation/read-only tasks or tasks without worktree_path so no WorktreeManager mocks are needed.",
+    );
   }
-
-  return hints;
-}
+  if (/Cannot find module .*WorktreeManager|vi\.spyOn\(require/i.test(output)) {
+    hints.push(
+      "Do not use require() or constructor spies under ESM/vitest. Prefer lightweight recoverIncomplete cases that need no WorktreeManager mock.",
+    );
+  }
