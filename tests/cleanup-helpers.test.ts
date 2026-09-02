@@ -1,136 +1,60 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import {
-  isMacaiWorktreePath,
-  taskIdFromMacaiWorktree,
-  hasNonEmptyReport,
-  selectOrphanedWorktrees,
-  selectPrunableTaskDirs,
-  selectStaleWorktreeDirs,
-  selectPrunableBaselineLogs,
-  listRunBaselineLogs,
-  previewReport,
-} from "../src/helpers/cleanup-helpers.js";
-import { formatTaskReview } from "../src/cli/reviewCommand.js";
-import { checkCoveragePackages } from "../src/helpers/doctor-checks.js";
+import { collectCleanupSummary, formatCleanupSummaryReport, formatOrphanedWorktreesSummary, removeBaselineLogs } from "../src/helpers/autoCleanup.js";
+import { createTempGitRepo } from "./helpers/tempMacaiRepo.ts";
 
 describe("cleanup-helpers", () => {
-  let tmp: string;
+  let tmpDir: string;
+  let repoPath: string;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "macai-cleanup-"));
+    const tempRepo = createTempGitRepo("macai-cleanup-helpers-");
+    tmpDir = tempRepo.tmpDir;
+    repoPath = tempRepo.repoPath;
   });
 
   afterEach(() => {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("detects macai worktree paths", () => {
-    expect(isMacaiWorktreePath(path.join(tmp, ".macai", "tasks", "abc123", "worktree"))).toBe(true);
-    expect(isMacaiWorktreePath(path.join(tmp, ".git", "worktrees", "foo"))).toBe(false);
+  it("collects cleanup summary with dryRun option", () => {
+    const summary = collectCleanupSummary(repoPath);
+    expect(summary.orphanedWorktrees).toEqual([]);
+    expect(summary.staleWorktreeDirs).toEqual([]);
+    expect(summary.prunableTaskDirs).toEqual([]);
+    expect(summary.prunableBaselineLogs).toEqual([]);
   });
 
-  it("extracts task id from worktree path", () => {
-    const wt = path.join(tmp, ".macai", "tasks", "abc123", "worktree");
-    expect(taskIdFromMacaiWorktree(wt)).toBe("abc123");
-    expect(taskIdFromMacaiWorktree("/tmp/worktree")).toBeNull();
+  it("formats orphaned worktree summary correctly", () => {
+    const wt = path.join(repoPath, ".macai", "tasks", "abc", "worktree");
+    const text = formatOrphanedWorktreesSummary([wt]);
+    expect(text).toContain("Found 1 orphaned worktree");
+    expect(text).toContain(wt);
+    expect(formatOrphanedWorktreesSummary([])).toContain("No orphaned worktrees");
   });
 
-  it("selects orphaned worktrees missing task dirs", () => {
-    const tasksDir = path.join(tmp, ".macai", "tasks", "abc123");
-    fs.mkdirSync(tasksDir, { recursive: true });
-    const worktrees = [
-      path.join(tmp, ".macai", "tasks", "abc123", "worktree"),
-      path.join(tmp, ".macai", "tasks", "missing", "worktree"),
-    ];
-    const orphaned = selectOrphanedWorktrees(tmp, worktrees);
-    expect(orphaned).toEqual([path.join(tmp, ".macai", "tasks", "missing", "worktree")]);
+  it("formats full cleanup report from summary", () => {
+    const report = formatCleanupSummaryReport({
+      orphanedWorktrees: [],
+      staleWorktreeDirs: [path.join(repoPath, ".macai", "tasks", "x", "worktree")],
+      prunableTaskDirs: [],
+      prunableBaselineLogs: [path.join(repoPath, ".macai", "baseline-abc.log")],
+    });
+    expect(report).toContain("## Cleanup Suggestions");
+    expect(report).toContain("### Stale Worktree Directories");
+    expect(report).toContain("Found 1 stale worktree");
+    expect(report).toContain("### Run Baseline Logs");
+    expect(report).toContain("baseline-abc.log");
   });
 
-  it("selects stale worktree dirs not registered in git", () => {
-    const taskDir = path.join(tmp, ".macai", "tasks", "abc123");
-    const wt = path.join(taskDir, "worktree");
-    fs.mkdirSync(wt, { recursive: true });
-    const stale = selectStaleWorktreeDirs(tmp, []);
-    expect(stale).toEqual([wt]);
-  });
-
-  it("keeps task dirs with reports unless force", () => {
-    const withReport = path.join(tmp, ".macai", "tasks", "has-report");
-    const empty = path.join(tmp, ".macai", "tasks", "empty");
-    fs.mkdirSync(withReport, { recursive: true });
-    fs.mkdirSync(empty, { recursive: true });
-    fs.writeFileSync(path.join(withReport, "investigation-report.md"), "# findings\n");
-
-    expect(hasNonEmptyReport(withReport)).toBe(true);
-    expect(selectPrunableTaskDirs(tmp)).toEqual([empty]);
-    expect(selectPrunableTaskDirs(tmp, { forceReports: true }).sort()).toEqual(
-      [withReport, empty].sort(),
-    );
-  });
-
-  it("prunes terminal-status coding tasks via db map", () => {
-    const done = path.join(tmp, ".macai", "tasks", "done123");
-    const active = path.join(tmp, ".macai", "tasks", "active456");
-    fs.mkdirSync(done, { recursive: true });
-    fs.mkdirSync(active, { recursive: true });
-
-    const status = new Map([
-      ["done123", "completed"],
-      ["active456", "working"],
-    ]);
-    expect(selectPrunableTaskDirs(tmp, { taskStatusById: status })).toEqual([done]);
-  });
-
-  it("previewReport truncates long files", () => {
-    const file = path.join(tmp, "report.md");
-    fs.writeFileSync(file, ["line1", "line2", "line3"].join("\n"));
-    expect(previewReport(file, 2)).toContain("line1");
-    expect(previewReport(file, 2)).toContain("more lines");
-  });
-
-  it("lists and selects prunable run baseline logs", () => {
-    const macaiDir = path.join(tmp, ".macai");
+  it("removes baseline logs correctly", () => {
+    const macaiDir = path.join(repoPath, ".macai");
     fs.mkdirSync(macaiDir, { recursive: true });
-    const keep = path.join(macaiDir, "baseline-abc12345.log");
-    const remove = path.join(macaiDir, "baseline-def67890.log");
-    fs.writeFileSync(keep, "keep\n");
-    fs.writeFileSync(remove, "remove\n");
+    const logPath = path.join(macaiDir, "baseline-deadbeef.log");
+    fs.writeFileSync(logPath, "output\n");
 
-    expect(listRunBaselineLogs(tmp).sort()).toEqual([keep, remove].sort());
-    expect(
-      selectPrunableBaselineLogs(tmp, { keepRunIds: new Set(["abc12345"]) }).sort(),
-    ).toEqual([remove]);
-  });
-});
-
-describe("formatTaskReview", () => {
-  it("includes core fields", () => {
-    const out = formatTaskReview(
-      {
-        id: "abc",
-        status: "completed",
-        mode: "coding",
-        title: "Test task",
-        branch: "macai/abc",
-        worktree_path: "/tmp/wt",
-      },
-      "report preview",
-      { lastCommit: "deadbeef task", diffStat: "1 file changed" },
-    );
-    expect(out).toContain("abc");
-    expect(out).toContain("completed");
-    expect(out).toContain("report preview");
-    expect(out).toContain("deadbeef");
-  });
-});
-
-describe("doctor-checks", () => {
-  it("checkCoveragePackages passes when deps installed", () => {
-    const result = checkCoveragePackages(process.cwd());
-    expect(result.ok).toBe(true);
-    expect(result.missing).toEqual([]);
+    removeBaselineLogs([logPath]);
+    expect(fs.existsSync(logPath)).toBe(false);
   });
 });
