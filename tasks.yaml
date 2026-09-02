@@ -1,57 +1,81 @@
 tasks:
-  - title: Map remaining test gaps
+  - title: Plan coverage for core untested modules
     description: |
-      Read .macai/macai-report.md and any investigation reports under .macai/tasks/.
-      Confirm which of ReportGenerator, cleanup dry-run, and JobManager still lack
-      meaningful tests. Propose a short ordered plan. Do not rewrite prior findings.
+      Read .macai/macai-report.md and prior investigation reports if present.
+      Focus ONLY on modules still near 0% coverage: src/persistence/Database.ts,
+      src/queue/JobManager.ts, src/queue/RunLock.ts, src/queue/TaskQueue.ts,
+      src/agent/AgentController.ts, and src/cli/*.ts (cleanupCommand, runStart,
+      promptCommand, reviewCommand).
+      Produce an ordered minimal test plan. Prefer small pure units first
+      (Database, RunLock, TaskQueue), then CLI helpers, then AgentController /
+      JobManager with mocks. Do not redo ReportGenerator/Scheduler/cleanup-helpers
+      coverage that already exists.
     mode: investigation
     priority: 10
 
-  - title: Add ReportGenerator tests using tempMacaiRepo helper
+  - title: Add MacaiDatabase unit tests
     description: |
-      Add tests/ReportGenerator.test.ts covering generateRunReport with a temp git
-      repo and real MacaiDatabase via tests/helpers/tempMacaiRepo.ts
-      (createTempGitRepo, openTempDatabase, seedMinimalRun).
-      Assert the report mentions the run id and includes "## Cleanup Suggestions"
-      when a stale .macai/tasks/*/worktree directory exists (section title is
-      "Cleanup Suggestions", not "Cleanup Summary").
-      Always call removeTempGitRepo in afterEach (it ignores Windows EPERM).
-      Do NOT mock MacaiDatabase. Do NOT rewrite Database.ts or ReportGenerator.ts
-      unless a compile error requires a tiny fix. Run npm test before committing.
+      Add tests/Database.test.ts using tests/helpers/tempMacaiRepo.ts
+      (createTempGitRepo, openTempDatabase, removeTempGitRepo).
+      Cover at least: getOrCreateProject, createRun, createTask, updateTask,
+      getTasksByRun, getRun, finishRun, and recordCommand or recordTestResult.
+      Use a real MacaiDatabase — NEVER mock it with vi.fn/arrow factories.
+      Always removeTempGitRepo in afterEach. Run npm test before committing.
+      Do not rewrite Database.ts unless required for a tiny testability fix.
     mode: coding
     priority: 9
 
-  - title: Add cleanup summary dry-run tests
+  - title: Add RunLock and TaskQueue unit tests
     description: |
-      Extend tests/autoCleanup.test.ts (or add tests/cleanupCommand.test.ts) to assert
-      collectCleanupSummary reports prunableBaselineLogs when baseline-*.log files
-      exist under .macai/, and that formatCleanupSummaryReport includes a Run Baseline
-      Logs section. Use createTempGitRepo from tests/helpers/tempMacaiRepo.ts.
-      Prefer testing collectCleanupSummary over mocking console.log for the CLI.
-      Run npm test before committing.
+      Add tests/RunLock.test.ts and/or tests/TaskQueue.test.ts.
+      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale using a temp
+      directory (createTempGitRepo or os.tmpdir).
+      TaskQueue: enqueueAll + getNext + getAll against a real MacaiDatabase via
+      openTempDatabase/seedMinimalRun patterns.
+      Keep tests deterministic. Run npm test before committing.
     mode: coding
     priority: 8
 
-  - title: Add Scheduler unit tests
+  - title: Add CLI helper tests for cleanup and review
     description: |
-      Add tests/Scheduler.test.ts for src/queue/Scheduler.ts covering hours limit,
-      until wall-clock parsing, cancel(), and shouldStop(). Keep tests small and
-      deterministic (fake timers OK). Run npm test before committing.
+      Add tests that exercise CLI helpers without spawning a full process if possible:
+      - Prefer calling collectCleanupSummary / runCleanupCommand with dryRun:true
+        and assert console output or return side effects via spies
+        (vi.spyOn(console, 'log')), OR extend tests/autoCleanup.test.ts if cleaner.
+      - Add or extend tests for formatTaskReview / runReviewCommand preview using
+        a temp task dir with a short investigation-report.md.
+      Do not rewrite production CLI unless a tiny extract is required for testability.
+      Run npm test before committing.
     mode: coding
     priority: 7
 
-  - title: Verify test suite passes
+  - title: Add AgentController investigation-mode smoke test
     description: |
-      Run npm test and npm run test:coverage. Fix only failures introduced by prior
-      tasks in this run. Do not expand scope. Commit fixes if needed.
-    mode: testing
+      Add tests/AgentController.test.ts with a mocked OllamaClient (see
+      tests/helpers/mockOllama.ts if present; otherwise a small inline stub).
+      Prefer testing a short investigation/read-only run that finishes without
+      worktrees: stub chat() to return brief responses with no tool calls so
+      phases advance. Use real MacaiDatabase + temp repo via tempMacaiRepo helpers.
+      Do NOT attempt a full coding-mode AgentController integration in this task.
+      If mocking classes, use class/function constructors — never arrow factories.
+      Run npm test before committing.
+    mode: coding
     priority: 6
 
-  - title: Document config auto-discovery and baseline cleanup
+  - title: Add JobManager lightweight tests
     description: |
-      Update README.md troubleshooting/configuration sections to mention that
-      macai.config.yaml is auto-loaded from the repo root, and that run baseline
-      logs are removed after each run and by macai cleanup. Prefer small edit_file
-      patches over rewriting the entire README.
-    mode: documentation
+      Add tests/JobManager.test.ts covering what is practical without a live LLM:
+      createJobManager merges config, and/or recoverIncomplete marks interrupted
+      tasks safely on a temp repo with sqlite state.
+      Avoid driving full executeRun against real Ollama. Prefer stubbing OllamaClient
+      if a partial run path is tested. Keep scope small. Run npm test before committing.
+    mode: coding
     priority: 5
+
+  - title: Verify suite and coverage summary
+    description: |
+      Run npm test and npm run test:coverage. Fix only failures from this run's
+      prior tasks. Do not invent noop "suite verification" tests. Commit fixes if needed.
+      Note remaining low-coverage files in the task log/commit message briefly.
+    mode: testing
+    priority: 4

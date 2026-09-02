@@ -298,8 +298,9 @@ export class AgentController {
               "- write_file requires BOTH path and content (string). Omitting content is an error.\n" +
               "- If a test file shows 'No test suite found', rewrite it with a full describe/it suite.\n" +
               "- If you see 'is not a constructor', fix the mock: use class MockX {} or function MockX() { return {...} }, not an arrow factory.\n" +
-              "- Prefer patterns from tests/ShellGuard.test.ts, tests/RepoDetector.test.ts, tests/cleanup-helpers.test.ts, and tests/helpers/tempMacaiRepo.ts.\n" +
+              "- Prefer patterns from tests/ShellGuard.test.ts, tests/RepoDetector.test.ts, tests/cleanup-helpers.test.ts, tests/helpers/tempMacaiRepo.ts, and tests/helpers/mockOllama.ts.\n" +
               "- NEVER mock MacaiDatabase / WorktreeManager with arrow factories. Import the real class and use createTempGitRepo + openTempDatabase.\n" +
+              "- For OllamaClient in agent/queue tests, use createMockOllama() from tests/helpers/mockOllama.ts.\n" +
               "- For cleanup CLI behavior, test collectCleanupSummary / formatCleanupSummaryReport from autoCleanup.ts (no need to mock console).\n" +
               "- Do not rewrite unrelated sample/docs files or production Database.ts unless the task requires it.\n" +
               "- If the failure is environmental (missing deps), run the install command then re-test.",
