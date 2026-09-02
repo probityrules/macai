@@ -28,7 +28,7 @@ const program = new Command();
 program
   .name("macai")
   .description("macai — local autonomous coding agent")
-  .version("0.1.3");
+  .version("0.1.4");
 
 program
   .command("start")
