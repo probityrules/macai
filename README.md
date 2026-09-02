@@ -208,6 +208,10 @@ sudo apt-get update && sudo apt-get install -y python3 make g++
 
 Copy `macai.config.example.yaml` to `macai.config.yaml` in your project root (auto-loaded by `macai doctor`, `macai start`, and `macai prompt` when `--config` is omitted). Customize limits, shell allowlists, and repo commands.
 
+**Configuration auto-discovery**: The `macai.config.yaml` file is automatically loaded from the repository root. If a configuration file exists in the current directory, it will be used; otherwise, macai will look for one in the repository root.
+
+**Config auto-discovery**: The `macai.config.yaml` file is automatically loaded from the repository root. If a config file exists in the current working directory, it will be used; otherwise, macai will look for one in the repository root.
+
 ### Configuration Options
 
 The configuration file supports the following options:
@@ -242,7 +246,7 @@ shell:
     - go
   deniedPatterns:
     - "rm -rf"
-    - "curl.*\\\\\\\\|"
+    - "curl.*\\\\\\\\\\\\\\\\|"
     - ssh
     - scp
 
