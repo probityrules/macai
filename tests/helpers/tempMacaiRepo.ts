@@ -12,6 +12,8 @@ import { MacaiDatabase } from "../../src/persistence/Database.js";
 export interface TempGitRepo {
   tmpDir: string;
   repoPath: string;
+  /** Alias for removeTempGitRepo(this) — prefer this or removeTempGitRepo in afterEach. */
+  cleanup: () => void;
 }
 
 export function createTempGitRepo(prefix = "macai-test-"): TempGitRepo {
@@ -24,7 +26,12 @@ export function createTempGitRepo(prefix = "macai-test-"): TempGitRepo {
   fs.writeFileSync(path.join(repoPath, "README.md"), "# Test\n");
   execFileSync("git", ["add", "."], { cwd: repoPath });
   execFileSync("git", ["commit", "-m", "init"], { cwd: repoPath });
-  return { tmpDir, repoPath };
+  const repo: TempGitRepo = {
+    tmpDir,
+    repoPath,
+    cleanup: () => removeTempGitRepo(repo),
+  };
+  return repo;
 }
 
 export function removeTempGitRepo(repo: TempGitRepo): void {
@@ -47,11 +54,12 @@ export function openTempDatabase(repoPath: string): MacaiDatabase {
   return new MacaiDatabase(path.join(macaiDir, "database.sqlite"));
 }
 
-export function seedMinimalRun(
+/** Create project + run only (no queued task). Prefer this before TaskQueue.enqueueAll. */
+export function seedRun(
   db: MacaiDatabase,
   repoPath: string,
   runId = "testrun01",
-): { projectId: number; runId: string; taskId: string } {
+): { projectId: number; runId: string } {
   const projectId = db.getOrCreateProject(repoPath);
   db.createRun({
     id: runId,
@@ -60,6 +68,15 @@ export function seedMinimalRun(
     ollamaUrl: "http://127.0.0.1:11434",
     maxRuntimeHours: 1,
   });
+  return { projectId, runId };
+}
+
+export function seedMinimalRun(
+  db: MacaiDatabase,
+  repoPath: string,
+  runId = "testrun01",
+): { projectId: number; runId: string; taskId: string } {
+  const { projectId } = seedRun(db, repoPath, runId);
   const taskId = "taskabcd12345678";
   db.createTask({
     id: taskId,

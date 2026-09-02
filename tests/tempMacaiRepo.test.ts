@@ -21,6 +21,7 @@ describe("tempMacaiRepo helpers", () => {
 
   it("creates a git repo and seeds a runnable sqlite database", () => {
     repo = createTempGitRepo();
+    expect(typeof repo.cleanup).toBe("function");
     const db = openTempDatabase(repo.repoPath);
     try {
       const seeded = seedMinimalRun(db, repo.repoPath);

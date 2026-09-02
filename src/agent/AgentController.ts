@@ -16,6 +16,7 @@ import { getSystemPrompt, shouldSkipPlanning } from "./prompts/system.js";
 import { Planner } from "./Planner.js";
 import { Reviewer } from "./Reviewer.js";
 import { InvestigationReporter } from "./InvestigationReporter.js";
+import { summarizeTestFailureOutput } from "../helpers/testFailureSummary.js";
 
 export interface PriorTaskHandoff {
   summary: string;
@@ -312,17 +313,22 @@ export class AgentController {
             role: "user",
             content:
               `Tests failed (fix attempt ${testFixCycles}/${maxTestFixCycles}). Analyze and fix.\n` +
-              `${testResult.output.slice(0, 4000)}\n\n` +
+              `${summarizeTestFailureOutput(testResult.output)}\n\n` +
               "You MUST call write_file or edit_file with REAL file content to fix failures.\n" +
               "Rules:\n" +
               "- New unit tests belong under tests/*.test.ts (vitest include pattern). Do not put them under src/**/__tests__.\n" +
               "- write_file requires BOTH path and content (string). Omitting content is an error.\n" +
               "- If a test file shows 'No test suite found', rewrite it with a full describe/it suite.\n" +
               "- If you see 'is not a constructor', fix the mock: use class MockX {} or function MockX() { return {...} }, not an arrow factory.\n" +
-              "- Prefer patterns from tests/ShellGuard.test.ts, tests/RepoDetector.test.ts, tests/cleanup-helpers.test.ts, tests/helpers/tempMacaiRepo.ts, and tests/helpers/mockOllama.ts.\n" +
+              "- Prefer patterns from tests/Database.test.ts, tests/ShellGuard.test.ts, tests/ReportGenerator.test.ts, and tests/helpers/tempMacaiRepo.ts.\n" +
               "- NEVER mock MacaiDatabase / WorktreeManager with arrow factories. Import the real class and use createTempGitRepo + openTempDatabase.\n" +
               "- For OllamaClient in agent/queue tests, use createMockOllama() from tests/helpers/mockOllama.ts. Do NOT edit tests/helpers/mockOllama.ts or tempMacaiRepo.ts (vitest, not jest).\n" +
               "- openTempDatabase(repo.repoPath) — pass .repoPath string, not the whole TempGitRepo object.\n" +
+              "- Temp repo cleanup: call removeTempGitRepo(repo) or repo.cleanup() in afterEach — never invent other APIs.\n" +
+              "- Close MacaiDatabase with db.close() in afterEach before removing the temp repo.\n" +
+              "- Before TaskQueue.enqueueAll, create a run with seedRun(db, repo.repoPath, runId) (not seedMinimalRun — that also inserts a queued sample task).\n" +
+              "- TaskQueue.getNext() returns undefined when empty (not null). getNext does not dequeue; markComplete to advance.\n" +
+              "- RunLock.releaseIfStale() only removes locks whose PID is dead; a live holder keeps the lock.\n" +
               "- For cleanup CLI behavior, test collectCleanupSummary / formatCleanupSummaryReport from autoCleanup.ts (no need to mock console).\n" +
               "- Do not rewrite unrelated sample/docs files or production Database.ts unless the task requires it.\n" +
               "- If the failure is environmental (missing deps), run the install command then re-test.",

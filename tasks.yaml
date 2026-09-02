@@ -1,10 +1,16 @@
 tasks:
   - title: Add RunLock and TaskQueue unit tests
     description: |
-      Add tests/RunLock.test.ts and tests/TaskQueue.test.ts (can be one file if cleaner).
-      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale using createTempGitRepo().
-      TaskQueue: enqueueAll, getNext, getAll, markComplete against openTempDatabase(repo.repoPath)
-      — pass .repoPath string, NOT the whole TempGitRepo object.
+      Add tests/RunLock.test.ts and tests/TaskQueue.test.ts.
+      Pattern (see tests/Database.test.ts and tests/helpers/tempMacaiRepo.ts):
+        const repo = createTempGitRepo();
+        const db = openTempDatabase(repo.repoPath);
+        afterEach: db.close(); removeTempGitRepo(repo) OR repo.cleanup();
+      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale on repo.repoPath.
+      releaseIfStale only clears locks whose PID is dead — do not expect it to drop a live lock.
+      TaskQueue: call seedRun(db, repo.repoPath, runId) BEFORE enqueueAll (creates run only).
+      Do NOT use seedMinimalRun for TaskQueue (it inserts an extra queued sample task).
+      getNext() returns undefined when empty; it does not dequeue — use markComplete.
       Do NOT edit tests/helpers/*.ts. Run npm test before committing.
     mode: coding
     priority: 10
@@ -26,6 +32,7 @@ tasks:
     description: |
       Add tests/JobManager.test.ts covering createJobManager config merge and/or
       recoverIncomplete on a temp repo with sqlite. Use createMockOllama if needed.
+      Use seedRun / seedMinimalRun + openTempDatabase(repo.repoPath).
       Do not drive full executeRun against live Ollama. Do NOT edit helper files.
       Run npm test before committing.
     mode: coding
