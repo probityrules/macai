@@ -20,7 +20,7 @@ export function summarizeTestFailureOutput(output: string, maxChars = 4000): str
 
   const source = withoutCrLfNoise || trimmed;
 
-  const failIdx = source.search(/Failed Tests|FAIL\s+\S|⎯+.*Failed/i);
+  const failIdx = source.search(/Failed Tests|Failed Suites|FAIL\s+\S|⎯+.*Failed/i);
   if (failIdx >= 0) {
     const fromFail = source.slice(failIdx);
     if (fromFail.length <= maxChars) return fromFail;
@@ -29,4 +29,40 @@ export function summarizeTestFailureOutput(output: string, maxChars = 4000): str
 
   if (source.length <= maxChars) return source;
   return `${source.slice(-maxChars)}\n\n[... showing last ${maxChars} chars of output ...]`;
+}
+
+/** Extra fix hints derived from common failure patterns in this repo. */
+export function buildTestFixHints(output: string): string[] {
+  const hints: string[] = [];
+
+  if (/Cannot find module ['"].*helpers\//i.test(output)) {
+    hints.push(
+      "Do not invent tests/helpers/* modules. Import createTempGitRepo, openTempDatabase, removeTempGitRepo, seedRun, seedMinimalRun from tests/helpers/tempMacaiRepo.ts only.",
+    );
+  }
+  if (/Cannot find module ['"].*RunLock/i.test(output) || /from ['"].*\/src\/RunLock/i.test(output)) {
+    hints.push("RunLock is at src/queue/RunLock.ts — import from '../src/queue/RunLock.js'.");
+  }
+  if (/Cannot find module ['"].*TaskQueue/i.test(output)) {
+    hints.push("TaskQueue is at src/queue/TaskQueue.ts — constructor is new TaskQueue(db, runId), not (repoPath, runId).");
+  }
+  if (/NOT NULL constraint failed: tasks\.run_id/i.test(output) || /FOREIGN KEY constraint failed/i.test(output)) {
+    hints.push("Create a run first with seedRun(db, repo.repoPath, runId) before TaskQueue.enqueueAll.");
+  }
+  if (/cleanup is not a function/i.test(output)) {
+    hints.push("Use removeTempGitRepo(repo) or repo.cleanup() from tempMacaiRepo — do not invent other cleanup APIs.");
+  }
+  if (/expected false to be true|expected true to be false/i.test(output) && /tryAcquire/i.test(output)) {
+    hints.push("RunLock.tryAcquire returns false while any live PID holds the lock file — even the same runId cannot re-acquire.");
+  }
+  if (/AgentController/i.test(output)) {
+    hints.push(
+      "Use createTestAppConfig() from tests/helpers/tempMacaiRepo.ts for AppConfig (nested ollama/limits/shell/paths). Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' }). Provide several createMockOllama chatResponses.",
+    );
+  }
+  if (/enqueueAll|TaskDefinition/i.test(output)) {
+    hints.push("enqueueAll takes TaskDefinition[] with title/description/mode/priority — not arbitrary { id, type, status } objects.");
+  }
+
+  return hints;
 }

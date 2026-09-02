@@ -2,46 +2,46 @@ tasks:
   - title: Add RunLock and TaskQueue unit tests
     description: |
       Add tests/RunLock.test.ts and tests/TaskQueue.test.ts.
-      Pattern (see tests/Database.test.ts and tests/helpers/tempMacaiRepo.ts):
+      FIRST read_file src/queue/RunLock.ts and src/queue/TaskQueue.ts — match real APIs.
+      Pattern (see tests/Database.test.ts):
+        import { createTempGitRepo, openTempDatabase, removeTempGitRepo, seedRun } from './helpers/tempMacaiRepo';
         const repo = createTempGitRepo();
         const db = openTempDatabase(repo.repoPath);
-        afterEach: db.close(); removeTempGitRepo(repo) OR repo.cleanup();
-      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale on repo.repoPath.
-      releaseIfStale only clears locks whose PID is dead — do not expect it to drop a live lock.
-      TaskQueue: call seedRun(db, repo.repoPath, runId) BEFORE enqueueAll (creates run only).
-      Do NOT use seedMinimalRun for TaskQueue (it inserts an extra queued sample task).
-      getNext() returns undefined when empty; it does not dequeue — use markComplete.
-      Do NOT edit tests/helpers/*.ts. Run npm test before committing.
+        afterEach: db.close(); removeTempGitRepo(repo);
+      RunLock: new RunLock(repo.repoPath); tryAcquire(runId)->boolean; release() no args;
+      getActiveRunId(); releaseIfStale() only clears dead-PID locks.
+      tryAcquire fails (false) while lock held — including same runId.
+      TaskQueue: new TaskQueue(db, runId); seedRun(db, repo.repoPath, runId) BEFORE enqueueAll;
+      enqueueAll([{ title, description }]); getNext()->undefined when empty; markComplete(id).
+      Do NOT invent helpers/dbHelpers. Do NOT edit tests/helpers/*.ts. Run npm test before commit.
     mode: coding
     priority: 10
 
   - title: Add AgentController investigation-mode smoke test
     description: |
-      Add tests/AgentController.test.ts using createMockOllama() from
-      tests/helpers/mockOllama.ts (vitest — do NOT rewrite that helper to jest.fn).
-      Use createTempGitRepo + openTempDatabase(repo.repoPath) + seedMinimalRun with
-      mode investigation (or createTask with mode investigation).
-      Stub chatResponses so phases advance with no tool calls. Prefer a short smoke
-      that AgentController.run() resolves successfully in investigation/read-only mode.
-      Do NOT edit tests/helpers/mockOllama.ts or tempMacaiRepo.ts.
-      Run npm test before committing.
+      Add tests/AgentController.test.ts.
+      FIRST read_file src/agent/AgentController.ts constructor/run context shape.
+      Use createMockOllama() and createTestAppConfig() from tests/helpers/tempMacaiRepo
+      (createTestAppConfig is re-exported there) + createTempGitRepo + openTempDatabase(repo.repoPath)
+      + seedMinimalRun, then db.updateTask(taskId, { mode: 'investigation' }).
+      mkdirSync a logDir under the temp repo. Pass several chatResponses so phases advance.
+      Expect result.success === true. Do NOT invent a flat config with model/ollamaUrl at top level.
+      Do NOT edit helpers. Run npm test before committing.
     mode: coding
     priority: 9
 
   - title: Add JobManager lightweight tests
     description: |
-      Add tests/JobManager.test.ts covering createJobManager config merge and/or
-      recoverIncomplete on a temp repo with sqlite. Use createMockOllama if needed.
-      Use seedRun / seedMinimalRun + openTempDatabase(repo.repoPath).
-      Do not drive full executeRun against live Ollama. Do NOT edit helper files.
-      Run npm test before committing.
+      Add tests/JobManager.test.ts covering createJobManager and/or recoverIncomplete.
+      Read src/queue/JobManager.ts first. Use createTempGitRepo, openTempDatabase, seedRun/seedMinimalRun,
+      createTestAppConfig, createMockOllama if needed. Do not call full executeRun against live Ollama.
+      Do NOT edit helper files. Run npm test before committing.
     mode: coding
     priority: 8
 
   - title: Verify suite and coverage summary
     description: |
-      Run npm test and npm run test:coverage. If the suite is already green, complete
-      without inventing new files or rewriting helpers. Only fix failures caused by
-      prior tasks in this run. Do not create noop verification tests.
+      Run npm test and npm run test:coverage. If already green, complete without inventing files.
+      Only fix failures from prior tasks. No noop verification tests.
     mode: testing
     priority: 7

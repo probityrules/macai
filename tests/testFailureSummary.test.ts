@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { summarizeTestFailureOutput } from "../src/helpers/testFailureSummary.js";
+import {
+  summarizeTestFailureOutput,
+  buildTestFixHints,
+} from "../src/helpers/testFailureSummary.js";
+import { createTestAppConfig } from "../src/config/Config.js";
 
 describe("summarizeTestFailureOutput", () => {
   it("skips CRLF noise and surfaces FAIL sections from the head slice", () => {
@@ -25,5 +29,25 @@ describe("summarizeTestFailureOutput", () => {
     const summary = summarizeTestFailureOutput(output, 200);
     expect(summary).toContain("TAIL_MARKER");
     expect(summary).toContain("showing last");
+  });
+});
+
+describe("buildTestFixHints", () => {
+  it("hints at tempMacaiRepo when a fake helpers module is missing", () => {
+    const hints = buildTestFixHints(
+      "Error: Cannot find module './helpers/dbHelpers' imported from tests/TaskQueue.test.ts",
+    );
+    expect(hints.some((h) => h.includes("tempMacaiRepo"))).toBe(true);
+  });
+});
+
+describe("createTestAppConfig", () => {
+  it("returns a nested AppConfig suitable for AgentController", () => {
+    const config = createTestAppConfig({
+      limits: { maxIterations: 25 },
+    });
+    expect(config.ollama.model).toBeTruthy();
+    expect(config.limits.maxIterations).toBe(25);
+    expect(config.shell.allowedCommands.length).toBeGreaterThan(0);
   });
 });

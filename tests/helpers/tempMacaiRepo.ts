@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { MacaiDatabase } from "../../src/persistence/Database.js";
+import { createTestAppConfig } from "../../src/config/Config.js";
+
+export { createTestAppConfig };
 
 /**
  * Shared test fixtures for macai unit/integration tests.

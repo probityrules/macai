@@ -13,6 +13,36 @@ export { DEFAULT_OLLAMA_BASE_URL };
 
 const DEFAULT_CONFIG: AppConfig = AppConfigSchema.parse({});
 
+/** Fresh default AppConfig for unit tests (do not mutate shared state). */
+export function createTestAppConfig(
+  overrides: Record<string, unknown> = {},
+): AppConfig {
+  return AppConfigSchema.parse({
+    ...structuredClone(DEFAULT_CONFIG),
+    ...overrides,
+    ollama: {
+      ...DEFAULT_CONFIG.ollama,
+      ...((overrides.ollama as object | undefined) ?? {}),
+    },
+    limits: {
+      ...DEFAULT_CONFIG.limits,
+      ...((overrides.limits as object | undefined) ?? {}),
+    },
+    shell: {
+      ...DEFAULT_CONFIG.shell,
+      ...((overrides.shell as object | undefined) ?? {}),
+    },
+    paths: {
+      ...DEFAULT_CONFIG.paths,
+      ...((overrides.paths as object | undefined) ?? {}),
+    },
+    repo: {
+      ...DEFAULT_CONFIG.repo,
+      ...((overrides.repo as object | undefined) ?? {}),
+    },
+  });
+}
+
 const CONFIG_FILENAMES = ["macai.config.yaml", "macai.config.yml"] as const;
 
 export function findConfigFile(searchDir?: string): string | undefined {

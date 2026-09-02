@@ -16,7 +16,7 @@ import { getSystemPrompt, shouldSkipPlanning } from "./prompts/system.js";
 import { Planner } from "./Planner.js";
 import { Reviewer } from "./Reviewer.js";
 import { InvestigationReporter } from "./InvestigationReporter.js";
-import { summarizeTestFailureOutput } from "../helpers/testFailureSummary.js";
+import { summarizeTestFailureOutput, buildTestFixHints } from "../helpers/testFailureSummary.js";
 
 export interface PriorTaskHandoff {
   summary: string;
@@ -59,6 +59,7 @@ export class AgentController {
   async run(): Promise<AgentRunResult> {
     const { task, worktreePath, logDir, config, db } = this.ctx;
     const readOnly = isReadOnlyMode(task.mode);
+    fs.mkdirSync(logDir, { recursive: true });
 
     let contextManager =
       ContextManager.loadFromCheckpoint(task.id, db) ??
@@ -309,13 +310,19 @@ export class AgentController {
 
           toolRegistry.resetRetries("validation");
           phase = "work";
+          const failureSummary = summarizeTestFailureOutput(testResult.output);
+          const dynamicHints = buildTestFixHints(testResult.output);
           messages.push({
             role: "user",
             content:
               `Tests failed (fix attempt ${testFixCycles}/${maxTestFixCycles}). Analyze and fix.\n` +
-              `${summarizeTestFailureOutput(testResult.output)}\n\n` +
+              `${failureSummary}\n\n` +
+              (dynamicHints.length
+                ? `Targeted hints for these failures:\n${dynamicHints.map((h) => `- ${h}`).join("\n")}\n\n`
+                : "") +
               "You MUST call write_file or edit_file with REAL file content to fix failures.\n" +
               "Rules:\n" +
+              "- Before rewriting tests, read_file the implementation under src/ (e.g. src/queue/RunLock.ts, TaskQueue.ts) and match real method signatures.\n" +
               "- New unit tests belong under tests/*.test.ts (vitest include pattern). Do not put them under src/**/__tests__.\n" +
               "- write_file requires BOTH path and content (string). Omitting content is an error.\n" +
               "- If a test file shows 'No test suite found', rewrite it with a full describe/it suite.\n" +
@@ -327,8 +334,10 @@ export class AgentController {
               "- Temp repo cleanup: call removeTempGitRepo(repo) or repo.cleanup() in afterEach — never invent other APIs.\n" +
               "- Close MacaiDatabase with db.close() in afterEach before removing the temp repo.\n" +
               "- Before TaskQueue.enqueueAll, create a run with seedRun(db, repo.repoPath, runId) (not seedMinimalRun — that also inserts a queued sample task).\n" +
+              "- TaskQueue constructor is new TaskQueue(db, runId). enqueueAll([{ title, description, mode?, priority? }]).\n" +
               "- TaskQueue.getNext() returns undefined when empty (not null). getNext does not dequeue; markComplete to advance.\n" +
-              "- RunLock.releaseIfStale() only removes locks whose PID is dead; a live holder keeps the lock.\n" +
+              "- RunLock.release() takes no args and returns void. tryAcquire is exclusive while the holder PID is alive.\n" +
+              "- AgentController tests: createTestAppConfig(), mkdir logDir, createMockOllama with several chatResponses, investigation mode via updateTask.\n" +
               "- For cleanup CLI behavior, test collectCleanupSummary / formatCleanupSummaryReport from autoCleanup.ts (no need to mock console).\n" +
               "- Do not rewrite unrelated sample/docs files or production Database.ts unless the task requires it.\n" +
               "- If the failure is environmental (missing deps), run the install command then re-test.",
