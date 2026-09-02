@@ -171,6 +171,13 @@ export class AgentController {
           }
 
           if (!readOnly && filesChanged.length === 0) {
+            // Testing tasks may find a green suite with nothing to fix — validate first.
+            if (task.mode === "testing" && emptyWorkNudges === 0) {
+              emptyWorkNudges += 1;
+              this.log("No edits yet in testing mode — running validation first");
+              phase = "test";
+              continue;
+            }
             emptyWorkNudges += 1;
             if (emptyWorkNudges > 3) {
               db.updateTask(task.id, {
@@ -187,8 +194,10 @@ export class AgentController {
             messages.push({
               role: "user",
               content:
-                "You finished the work phase without changing any files. " +
-                "Implement the task now using write_file or edit_file. Do not only read or search.",
+                task.mode === "testing"
+                  ? "Tests are failing or incomplete. Fix only the failures from this run using write_file/edit_file under tests/*.test.ts. Do not rewrite helpers or unrelated production files."
+                  : "You finished the work phase without changing any files. " +
+                    "Implement the task now using write_file or edit_file. Do not only read or search.",
             });
             this.log("No file changes yet — continuing work");
             continue;
@@ -251,6 +260,18 @@ export class AgentController {
           if (testResult.passed) {
             testsPassed = true;
             testFixCycles = 0;
+            if (task.mode === "testing" && filesChanged.length === 0) {
+              this.log("Suite green with no fixes required — completing testing task");
+              db.updateTask(task.id, {
+                status: "completed",
+                ended_at: new Date().toISOString(),
+              });
+              return {
+                success: true,
+                filesChanged: [],
+                branch: task.branch,
+              };
+            }
             phase = "review";
             continue;
           }
@@ -300,7 +321,8 @@ export class AgentController {
               "- If you see 'is not a constructor', fix the mock: use class MockX {} or function MockX() { return {...} }, not an arrow factory.\n" +
               "- Prefer patterns from tests/ShellGuard.test.ts, tests/RepoDetector.test.ts, tests/cleanup-helpers.test.ts, tests/helpers/tempMacaiRepo.ts, and tests/helpers/mockOllama.ts.\n" +
               "- NEVER mock MacaiDatabase / WorktreeManager with arrow factories. Import the real class and use createTempGitRepo + openTempDatabase.\n" +
-              "- For OllamaClient in agent/queue tests, use createMockOllama() from tests/helpers/mockOllama.ts.\n" +
+              "- For OllamaClient in agent/queue tests, use createMockOllama() from tests/helpers/mockOllama.ts. Do NOT edit tests/helpers/mockOllama.ts or tempMacaiRepo.ts (vitest, not jest).\n" +
+              "- openTempDatabase(repo.repoPath) — pass .repoPath string, not the whole TempGitRepo object.\n" +
               "- For cleanup CLI behavior, test collectCleanupSummary / formatCleanupSummaryReport from autoCleanup.ts (no need to mock console).\n" +
               "- Do not rewrite unrelated sample/docs files or production Database.ts unless the task requires it.\n" +
               "- If the failure is environmental (missing deps), run the install command then re-test.",

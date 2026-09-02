@@ -37,6 +37,11 @@ export function removeTempGitRepo(repo: TempGitRepo): void {
 
 /** Open a real MacaiDatabase under .macai/ in the temp repo (no vitest mocks). */
 export function openTempDatabase(repoPath: string): MacaiDatabase {
+  if (!repoPath || typeof repoPath !== "string") {
+    throw new Error(
+      "openTempDatabase(repoPath) requires a string path — pass createTempGitRepo().repoPath, not the whole TempGitRepo object",
+    );
+  }
   const macaiDir = path.join(repoPath, ".macai");
   fs.mkdirSync(macaiDir, { recursive: true });
   return new MacaiDatabase(path.join(macaiDir, "database.sqlite"));

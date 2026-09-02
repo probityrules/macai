@@ -1,81 +1,40 @@
 tasks:
-  - title: Plan coverage for core untested modules
-    description: |
-      Read .macai/macai-report.md and prior investigation reports if present.
-      Focus ONLY on modules still near 0% coverage: src/persistence/Database.ts,
-      src/queue/JobManager.ts, src/queue/RunLock.ts, src/queue/TaskQueue.ts,
-      src/agent/AgentController.ts, and src/cli/*.ts (cleanupCommand, runStart,
-      promptCommand, reviewCommand).
-      Produce an ordered minimal test plan. Prefer small pure units first
-      (Database, RunLock, TaskQueue), then CLI helpers, then AgentController /
-      JobManager with mocks. Do not redo ReportGenerator/Scheduler/cleanup-helpers
-      coverage that already exists.
-    mode: investigation
-    priority: 10
-
-  - title: Add MacaiDatabase unit tests
-    description: |
-      Add tests/Database.test.ts using tests/helpers/tempMacaiRepo.ts
-      (createTempGitRepo, openTempDatabase, removeTempGitRepo).
-      Cover at least: getOrCreateProject, createRun, createTask, updateTask,
-      getTasksByRun, getRun, finishRun, and recordCommand or recordTestResult.
-      Use a real MacaiDatabase — NEVER mock it with vi.fn/arrow factories.
-      Always removeTempGitRepo in afterEach. Run npm test before committing.
-      Do not rewrite Database.ts unless required for a tiny testability fix.
-    mode: coding
-    priority: 9
-
   - title: Add RunLock and TaskQueue unit tests
     description: |
-      Add tests/RunLock.test.ts and/or tests/TaskQueue.test.ts.
-      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale using a temp
-      directory (createTempGitRepo or os.tmpdir).
-      TaskQueue: enqueueAll + getNext + getAll against a real MacaiDatabase via
-      openTempDatabase/seedMinimalRun patterns.
-      Keep tests deterministic. Run npm test before committing.
+      Add tests/RunLock.test.ts and tests/TaskQueue.test.ts (can be one file if cleaner).
+      RunLock: tryAcquire, getActiveRunId, release, releaseIfStale using createTempGitRepo().
+      TaskQueue: enqueueAll, getNext, getAll, markComplete against openTempDatabase(repo.repoPath)
+      — pass .repoPath string, NOT the whole TempGitRepo object.
+      Do NOT edit tests/helpers/*.ts. Run npm test before committing.
     mode: coding
-    priority: 8
-
-  - title: Add CLI helper tests for cleanup and review
-    description: |
-      Add tests that exercise CLI helpers without spawning a full process if possible:
-      - Prefer calling collectCleanupSummary / runCleanupCommand with dryRun:true
-        and assert console output or return side effects via spies
-        (vi.spyOn(console, 'log')), OR extend tests/autoCleanup.test.ts if cleaner.
-      - Add or extend tests for formatTaskReview / runReviewCommand preview using
-        a temp task dir with a short investigation-report.md.
-      Do not rewrite production CLI unless a tiny extract is required for testability.
-      Run npm test before committing.
-    mode: coding
-    priority: 7
+    priority: 10
 
   - title: Add AgentController investigation-mode smoke test
     description: |
-      Add tests/AgentController.test.ts with a mocked OllamaClient (see
-      tests/helpers/mockOllama.ts if present; otherwise a small inline stub).
-      Prefer testing a short investigation/read-only run that finishes without
-      worktrees: stub chat() to return brief responses with no tool calls so
-      phases advance. Use real MacaiDatabase + temp repo via tempMacaiRepo helpers.
-      Do NOT attempt a full coding-mode AgentController integration in this task.
-      If mocking classes, use class/function constructors — never arrow factories.
+      Add tests/AgentController.test.ts using createMockOllama() from
+      tests/helpers/mockOllama.ts (vitest — do NOT rewrite that helper to jest.fn).
+      Use createTempGitRepo + openTempDatabase(repo.repoPath) + seedMinimalRun with
+      mode investigation (or createTask with mode investigation).
+      Stub chatResponses so phases advance with no tool calls. Prefer a short smoke
+      that AgentController.run() resolves successfully in investigation/read-only mode.
+      Do NOT edit tests/helpers/mockOllama.ts or tempMacaiRepo.ts.
       Run npm test before committing.
     mode: coding
-    priority: 6
+    priority: 9
 
   - title: Add JobManager lightweight tests
     description: |
-      Add tests/JobManager.test.ts covering what is practical without a live LLM:
-      createJobManager merges config, and/or recoverIncomplete marks interrupted
-      tasks safely on a temp repo with sqlite state.
-      Avoid driving full executeRun against real Ollama. Prefer stubbing OllamaClient
-      if a partial run path is tested. Keep scope small. Run npm test before committing.
+      Add tests/JobManager.test.ts covering createJobManager config merge and/or
+      recoverIncomplete on a temp repo with sqlite. Use createMockOllama if needed.
+      Do not drive full executeRun against live Ollama. Do NOT edit helper files.
+      Run npm test before committing.
     mode: coding
-    priority: 5
+    priority: 8
 
   - title: Verify suite and coverage summary
     description: |
-      Run npm test and npm run test:coverage. Fix only failures from this run's
-      prior tasks. Do not invent noop "suite verification" tests. Commit fixes if needed.
-      Note remaining low-coverage files in the task log/commit message briefly.
+      Run npm test and npm run test:coverage. If the suite is already green, complete
+      without inventing new files or rewriting helpers. Only fix failures caused by
+      prior tasks in this run. Do not create noop verification tests.
     mode: testing
-    priority: 4
+    priority: 7

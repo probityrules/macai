@@ -4,6 +4,9 @@ import type { ChatResponse, OllamaClient, OllamaMessage, OllamaTool } from "../.
  * Lightweight OllamaClient stub for unit tests.
  * Prefer this over mocking the class with an arrow factory
  * (which causes "is not a constructor").
+ *
+ * DO NOT rewrite this file to use jest.fn — this project uses vitest.
+ * Import createMockOllama and pass chatResponses instead.
  */
 export interface MockOllamaOptions {
   model?: string;

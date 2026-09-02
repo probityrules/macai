@@ -110,8 +110,8 @@ export class OllamaClient {
     tools?: OllamaTool[],
     options?: { temperature?: number; retries?: number },
   ): Promise<ChatResponse> {
-    const maxAttempts = Math.max(1, (options?.retries ?? 3));
-    let lastError: Error | undefined;
+    const maxAttempts = Math.max(1, (options?.retries ?? 5));
+  let lastError: Error | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       this.abortController = new AbortController();
@@ -146,7 +146,7 @@ export class OllamaClient {
             throw err;
           }
           lastError = err;
-          await sleep(500 * attempt);
+          await sleep(750 * attempt);
           continue;
         }
 
@@ -159,7 +159,7 @@ export class OllamaClient {
           throw error;
         }
         lastError = error;
-        await sleep(500 * attempt);
+        await sleep(750 * attempt);
       }
     }
 

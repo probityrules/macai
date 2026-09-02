@@ -32,7 +32,7 @@ When done with a phase, respond with a brief summary of what you accomplished.`;
 
   const modeRules: Record<TaskMode, string> = {
     coding: "You may modify code and commit when tests pass.",
-    testing: "Focus on adding tests. Modify code only if necessary for testability.",
+    testing: "Focus on adding tests. Modify code only if necessary for testability. If npm test is already green and no prior-task failures need fixing, finish without inventing new files. Never rewrite tests/helpers/* or unrelated modules.",
     review: "READ-ONLY mode. Do not modify files or commit. Produce findings and recommendations.",
     documentation:
       "Focus on documentation improvements. Keep code changes minimal. Do not run the full test suite; finish with a review and commit of doc changes. Prefer small README edits over rewriting the whole file.",
