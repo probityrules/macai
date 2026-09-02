@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import path from "node:path";
 import { gitExecFile } from "../git/gitBinary.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
-import { taskIdFromMacaiWorktree } from "../helpers/cleanup-helpers.js";
+import { taskIdFromMacaiWorktree, taskIdFromTaskDir } from "../helpers/cleanup-helpers.js";
 import {
   collectCleanupSummary,
   loadTaskStatusMap,
@@ -16,13 +17,23 @@ export interface CleanupOptions {
   olderThanDays?: number;
 }
 
+function removeMacaiBranch(repoPath: string, taskId: string): void {
+  try {
+    gitExecFile(["branch", "-D", `macai/${taskId}`], { cwd: repoPath });
+  } catch {
+    // branch may already be gone
+  }
+}
+
 export async function runCleanupCommand(repoPath: string, options: CleanupOptions = {}): Promise<void> {
   const dryRun = options.dryRun ?? false;
   const pruneTasks = options.pruneTasks ?? true;
 
   console.log(`macai cleanup — ${repoPath}`);
   if (dryRun) console.log("DRY RUN — no changes will be made\n");
-  if (options.forceReports) console.log("Force mode — task dirs with reports may be removed\n");
+  if (options.forceReports) {
+    console.log("Force mode — task dirs with reports/worktrees may be removed\n");
+  }
   if (options.olderThanDays !== undefined) {
     console.log(`Age filter — only dirs older than ${options.olderThanDays} day(s)\n`);
   }
@@ -62,13 +73,7 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
     try {
       worktreeManager.removeWorktreeAt(worktreePath, true);
       const taskId = taskIdFromMacaiWorktree(worktreePath);
-      if (taskId) {
-        try {
-          gitExecFile(["branch", "-D", `macai/${taskId}`], { cwd: repoPath });
-        } catch {
-          // branch may already be gone
-        }
-      }
+      if (taskId) removeMacaiBranch(repoPath, taskId);
       console.log(`Removed worktree ${worktreePath}`);
     } catch (err) {
       console.error(`Failed to remove worktree ${worktreePath}:`, err);
@@ -87,6 +92,16 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
 
   for (const taskDir of tasksToPrune) {
     try {
+      const worktreePath = path.join(taskDir, "worktree");
+      if (fs.existsSync(worktreePath)) {
+        try {
+          worktreeManager.removeWorktreeAt(worktreePath, true);
+        } catch {
+          detachWorktreeNodeModules(worktreePath);
+          fs.rmSync(worktreePath, { recursive: true, force: true });
+        }
+        removeMacaiBranch(repoPath, taskIdFromTaskDir(taskDir));
+      }
       fs.rmSync(taskDir, { recursive: true, force: true });
       console.log(`Removed task dir ${taskDir}`);
     } catch (err) {

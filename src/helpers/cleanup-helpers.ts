@@ -112,7 +112,8 @@ export function selectPrunableTaskDirs(repoPath: string, options: PruneTaskOptio
   return listTaskDirs(repoPath)
     .filter((info) => {
       if (info.hasReport && !forceReports) return false;
-      if (info.hasWorktreeDir) return false;
+      // Keep active worktrees unless force mode (used for full housekeeping).
+      if (info.hasWorktreeDir && !forceReports) return false;
 
       if (taskStatusById) {
         const status = taskStatusById.get(info.taskId);

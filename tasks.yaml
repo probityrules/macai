@@ -1,0 +1,55 @@
+tasks:
+  - title: Map remaining test gaps
+    description: |
+      Read .macai/macai-report.md and any investigation reports under .macai/tasks/.
+      Confirm which of ReportGenerator, cleanup dry-run, and JobManager still lack
+      meaningful tests. Propose a short ordered plan. Do not rewrite prior findings.
+    mode: investigation
+    priority: 10
+
+  - title: Add ReportGenerator tests using tempMacaiRepo helper
+    description: |
+      Add tests/ReportGenerator.test.ts covering generateRunReport with a temp git
+      repo and real MacaiDatabase via tests/helpers/tempMacaiRepo.ts
+      (createTempGitRepo, openTempDatabase, seedMinimalRun).
+      Assert the report mentions the run id and includes cleanup suggestions when a
+      stale .macai/tasks/*/worktree directory exists.
+      Do NOT mock MacaiDatabase. Do NOT rewrite Database.ts or ReportGenerator.ts
+      unless a compile error requires a tiny fix. Run npm test before committing.
+    mode: coding
+    priority: 9
+
+  - title: Add cleanup summary dry-run tests
+    description: |
+      Extend tests/autoCleanup.test.ts (or add tests/cleanupCommand.test.ts) to assert
+      collectCleanupSummary reports prunableBaselineLogs when baseline-*.log files
+      exist under .macai/, and that formatCleanupSummaryReport includes a Run Baseline
+      Logs section. Use createTempGitRepo from tests/helpers/tempMacaiRepo.ts.
+      Prefer testing collectCleanupSummary over mocking console.log for the CLI.
+      Run npm test before committing.
+    mode: coding
+    priority: 8
+
+  - title: Add Scheduler unit tests
+    description: |
+      Add tests/Scheduler.test.ts for src/queue/Scheduler.ts covering hours limit,
+      until wall-clock parsing, cancel(), and shouldStop(). Keep tests small and
+      deterministic (fake timers OK). Run npm test before committing.
+    mode: coding
+    priority: 7
+
+  - title: Verify test suite passes
+    description: |
+      Run npm test and npm run test:coverage. Fix only failures introduced by prior
+      tasks in this run. Do not expand scope. Commit fixes if needed.
+    mode: testing
+    priority: 6
+
+  - title: Document config auto-discovery and baseline cleanup
+    description: |
+      Update README.md troubleshooting/configuration sections to mention that
+      macai.config.yaml is auto-loaded from the repo root, and that run baseline
+      logs are removed after each run and by macai cleanup. Prefer small edit_file
+      patches over rewriting the entire README.
+    mode: documentation
+    priority: 5

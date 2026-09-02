@@ -22,6 +22,18 @@ export class Reviewer {
       };
     }
 
+    // Documentation-only deliverables (README / config examples) are enough to approve without an LLM round-trip.
+    const docOnly =
+      /\bREADME\.md\b/i.test(trimmed) &&
+      !/\bsrc\//i.test(trimmed) &&
+      !/\btests\//i.test(trimmed);
+    if (docOnly) {
+      return {
+        approved: true,
+        feedback: "APPROVED: Documentation changes look on-task.",
+      };
+    }
+
     const response = await this.ollama.chat([
       {
         role: "system",

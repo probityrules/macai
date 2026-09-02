@@ -35,7 +35,7 @@ When done with a phase, respond with a brief summary of what you accomplished.`;
     testing: "Focus on adding tests. Modify code only if necessary for testability.",
     review: "READ-ONLY mode. Do not modify files or commit. Produce findings and recommendations.",
     documentation:
-      "Focus on documentation improvements. Keep code changes minimal. Do not run the full test suite; finish with a review and commit of doc changes.",
+      "Focus on documentation improvements. Keep code changes minimal. Do not run the full test suite; finish with a review and commit of doc changes. Prefer small README edits over rewriting the whole file.",
     refactoring: "Refactor safely with tests passing throughout.",
     investigation:
       "READ-ONLY mode. Investigate and produce a report. Do not modify production code.",
@@ -48,7 +48,7 @@ When done with a phase, respond with a brief summary of what you accomplished.`;
     work:
       mode === "documentation"
         ? "Phase: WORK. You MUST call write_file or edit_file to create or update documentation before finishing this phase. Do not end with only reads/searches. Do not run run_tests."
-        : "Phase: WORK. Implement changes using tools. You MUST call write_file or edit_file (and related tools) — do not finish with text only. Call run_tests after significant edits. When adding Vitest tests: put them under tests/*.test.ts; follow patterns in existing tests/; prefer temp dirs and lightweight stubs; if mocking a class use a real constructor (class or function), never an arrow factory — arrow mocks throw 'is not a constructor'.",
+        : "Phase: WORK. Implement changes using tools. You MUST call write_file or edit_file (and related tools) — do not finish with text only. Call run_tests after significant edits. When adding Vitest tests: put them under tests/*.test.ts; follow patterns in existing tests/; use helpers from tests/helpers/tempMacaiRepo.ts for temp git repos and real MacaiDatabase instances — NEVER mock MacaiDatabase with an arrow factory (causes 'is not a constructor'); prefer temp dirs and lightweight stubs; if mocking a class use a real constructor (class or function).",
     investigate:
       "Phase: INVESTIGATE. Use read/search tools to gather evidence. Do not modify files. Take notes on findings.",
     report:

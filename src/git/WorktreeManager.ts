@@ -110,6 +110,11 @@ export class WorktreeManager {
     } catch {
       // worktree may already be removed
     }
+    try {
+      this.git(["worktree", "prune"]);
+    } catch {
+      // ignore prune failures
+    }
   }
 
   listWorktrees(): string[] {
