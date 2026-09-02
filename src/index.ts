@@ -36,8 +36,8 @@ program
   .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
   .option("--tasks <file>", "YAML file with task definitions")
   .option("--config <file>", "Config file path")
-  .option("--model <name>", "Ollama model name", "qwen3-coder:latest")
-  .option("--ollama-url <url>", "Ollama base URL", DEFAULT_OLLAMA_BASE_URL)
+  .option("--model <name>", "Ollama model name (overrides config)")
+  .option("--ollama-url <url>", `Ollama base URL (overrides config; default ${DEFAULT_OLLAMA_BASE_URL})`)
   .option("--hours <n>", "Maximum runtime in hours", "8")
   .option("--until <time>", "Stop at wall-clock time (HH:MM)")
   .option("--base-branch <name>", "Base branch for worktrees")
@@ -69,8 +69,8 @@ program
   .option("-p, --prompt <text>", "Prompt text (alternative to argument)")
   .option("--prompt-file <file>", "Read prompt from a file")
   .option("--config <file>", "Config file path")
-  .option("--model <name>", "Ollama model name", "qwen3-coder:latest")
-  .option("--ollama-url <url>", "Ollama base URL", DEFAULT_OLLAMA_BASE_URL)
+  .option("--model <name>", "Ollama model name (overrides config)")
+  .option("--ollama-url <url>", `Ollama base URL (overrides config; default ${DEFAULT_OLLAMA_BASE_URL})`)
   .option("--hours <n>", "Default runtime hint in hours", "8")
   .option("--until <time>", "Stop at wall-clock time (HH:MM)")
   .option("--base-branch <name>", "Base branch for worktrees")
@@ -199,7 +199,7 @@ tasksCmd
       process.exit(1);
     }
 
-    const config = mergeConfig(loadConfig(), {
+    const config = mergeConfig(loadConfig(opts.config, repo), {
       model: opts.model,
       ollamaUrl: opts.ollamaUrl,
     });
@@ -295,7 +295,7 @@ program
   .command("doctor")
   .description("Check Ollama, git, and model availability")
   .option("--repo <path>", "Path to verify git repository", DEFAULT_REPO)
-  .option("--ollama-url <url>", "Ollama base URL", DEFAULT_OLLAMA_BASE_URL)
+  .option("--ollama-url <url>", `Ollama base URL (overrides config; default ${DEFAULT_OLLAMA_BASE_URL})`)
   .option("--model <name>", "Model to check", "qwen3-coder:latest")
   .action(async (opts) => {
     console.log("\nmacai Doctor");
@@ -303,7 +303,7 @@ program
 
     const repo = resolveRepo(opts.repo);
 
-    const config = mergeConfig(loadConfig(), {
+    const config = mergeConfig(loadConfig(opts.config, repo), {
       model: opts.model,
       ollamaUrl: opts.ollamaUrl,
     });

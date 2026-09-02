@@ -13,12 +13,33 @@ export { DEFAULT_OLLAMA_BASE_URL };
 
 const DEFAULT_CONFIG: AppConfig = AppConfigSchema.parse({});
 
-export function loadConfig(configPath?: string): AppConfig {
-  if (!configPath) {
+const CONFIG_FILENAMES = ["macai.config.yaml", "macai.config.yml"] as const;
+
+export function findConfigFile(searchDir?: string): string | undefined {
+  if (!searchDir) return undefined;
+  const dir = path.resolve(searchDir);
+  for (const name of CONFIG_FILENAMES) {
+    const candidate = path.join(dir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+export function loadConfig(configPath?: string, searchDir?: string): AppConfig {
+  const explicit = configPath?.trim();
+  let resolved: string | undefined;
+  if (explicit) {
+    resolved = path.resolve(explicit);
+  } else if (searchDir) {
+    resolved = findConfigFile(searchDir);
+  } else {
+    resolved = findConfigFile(process.cwd());
+  }
+
+  if (!resolved) {
     return DEFAULT_CONFIG;
   }
 
-  const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) {
     throw new Error(`Config file not found: ${resolved}`);
   }

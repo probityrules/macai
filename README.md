@@ -206,7 +206,7 @@ sudo apt-get update && sudo apt-get install -y python3 make g++
 
 ## Configuration
 
-Copy `macai.config.example.yaml` and customize limits, shell allowlists, and repo commands.
+Copy `macai.config.example.yaml` to `macai.config.yaml` in your project root (auto-loaded by `macai doctor`, `macai start`, and `macai prompt` when `--config` is omitted). Customize limits, shell allowlists, and repo commands.
 
 ### Configuration Options
 

@@ -16,7 +16,7 @@ export interface StartCommandOptions {
 }
 
 export async function runMacaiStart(opts: StartCommandOptions): Promise<void> {
-  const baseConfig = loadConfig(opts.config);
+  const baseConfig = loadConfig(opts.config, opts.repo);
   const appConfig = mergeConfig(baseConfig, {
     model: opts.model,
     ollamaUrl: opts.ollamaUrl,
@@ -44,8 +44,9 @@ export function resolveAppConfig(opts: {
   config?: string;
   model?: string;
   ollamaUrl?: string;
+  repo?: string;
 }): AppConfig {
-  return mergeConfig(loadConfig(opts.config), {
+  return mergeConfig(loadConfig(opts.config, opts.repo), {
     model: opts.model,
     ollamaUrl: opts.ollamaUrl,
   });

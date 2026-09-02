@@ -443,7 +443,7 @@ export class JobManager {
 }
 
 export function createJobManager(options: StartOptions): JobManager {
-  const baseConfig = loadConfig(options.config);
+  const baseConfig = loadConfig(options.config, options.repo);
   const appConfig = mergeConfig(baseConfig, {
     model: options.model,
     ollamaUrl: options.ollamaUrl,
