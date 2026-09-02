@@ -1,6 +1,6 @@
 {
   "name": "macai",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "macai — local autonomous coding agent with Ollama",
   "type": "module",
   "bin": {

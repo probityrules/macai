@@ -70,3 +70,9 @@ export function buildTestFixHints(output: string): string[] {
       "Do not use require() or constructor spies under ESM/vitest. Prefer lightweight recoverIncomplete cases that need no WorktreeManager mock.",
     );
   }
+  if (/enqueueAll|TaskDefinition/i.test(output)) {
+    hints.push("enqueueAll takes TaskDefinition[] with title/description/mode/priority — not arbitrary { id, type, status } objects.");
+  }
+
+  return hints;
+}

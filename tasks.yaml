@@ -1,47 +1,18 @@
 tasks:
-  - title: Add RunLock and TaskQueue unit tests
+  - title: Add TaskQueue unit tests
     description: |
-      Add tests/RunLock.test.ts and tests/TaskQueue.test.ts.
-      FIRST read_file src/queue/RunLock.ts and src/queue/TaskQueue.ts — match real APIs.
-      Pattern (see tests/Database.test.ts):
-        import { createTempGitRepo, openTempDatabase, removeTempGitRepo, seedRun } from './helpers/tempMacaiRepo';
-        const repo = createTempGitRepo();
-        const db = openTempDatabase(repo.repoPath);
-        afterEach: db.close(); removeTempGitRepo(repo);
-      RunLock: new RunLock(repo.repoPath); tryAcquire(runId)->boolean; release() no args;
-      getActiveRunId(); releaseIfStale() only clears dead-PID locks.
-      tryAcquire fails (false) while lock held — including same runId.
-      TaskQueue: new TaskQueue(db, runId); seedRun(db, repo.repoPath, runId) BEFORE enqueueAll;
-      enqueueAll([{ title, description }]); getNext()->undefined when empty; markComplete(id).
-      Do NOT invent helpers/dbHelpers. Do NOT edit tests/helpers/*.ts. Run npm test before commit.
+      Add tests/TaskQueue.test.ts (RunLock already covered in tests/RunLock.test.ts).
+      FIRST read_file src/queue/TaskQueue.ts.
+      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedRun(db, repo.repoPath, runId),
+      removeTempGitRepo or repo.cleanup, db.close in afterEach.
+      new TaskQueue(db, runId); enqueueAll([{ title, description }]); getNext/getAll/markComplete.
+      getNext returns undefined when empty and does not dequeue.
+      Do not invent helpers. Do not edit helpers. Run npm test before commit.
     mode: coding
     priority: 10
 
-  - title: Add AgentController investigation-mode smoke test
+  - title: Verify suite after TaskQueue tests
     description: |
-      Add tests/AgentController.test.ts.
-      FIRST read_file src/agent/AgentController.ts constructor/run context shape.
-      Use createMockOllama() and createTestAppConfig() from tests/helpers/tempMacaiRepo
-      (createTestAppConfig is re-exported there) + createTempGitRepo + openTempDatabase(repo.repoPath)
-      + seedMinimalRun, then db.updateTask(taskId, { mode: 'investigation' }).
-      mkdirSync a logDir under the temp repo. Pass several chatResponses so phases advance.
-      Expect result.success === true. Do NOT invent a flat config with model/ollamaUrl at top level.
-      Do NOT edit helpers. Run npm test before committing.
-    mode: coding
-    priority: 9
-
-  - title: Add JobManager lightweight tests
-    description: |
-      Add tests/JobManager.test.ts covering createJobManager and/or recoverIncomplete.
-      Read src/queue/JobManager.ts first. Use createTempGitRepo, openTempDatabase, seedRun/seedMinimalRun,
-      createTestAppConfig, createMockOllama if needed. Do not call full executeRun against live Ollama.
-      Do NOT edit helper files. Run npm test before committing.
-    mode: coding
-    priority: 8
-
-  - title: Verify suite and coverage summary
-    description: |
-      Run npm test and npm run test:coverage. If already green, complete without inventing files.
-      Only fix failures from prior tasks. No noop verification tests.
+      Run npm test. If green, complete without inventing files. Fix only TaskQueue-related failures.
     mode: testing
-    priority: 7
+    priority: 9
