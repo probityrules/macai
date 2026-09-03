@@ -1,18 +1,71 @@
 tasks:
-  - title: Add TaskQueue unit tests
+  - title: AgentController failure-path tests
     description: |
-      Add tests/TaskQueue.test.ts (RunLock already covered in tests/RunLock.test.ts).
-      FIRST read_file src/queue/TaskQueue.ts.
-      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedRun(db, repo.repoPath, runId),
-      removeTempGitRepo or repo.cleanup, db.close in afterEach.
-      new TaskQueue(db, runId); enqueueAll([{ title, description }]); getNext/getAll/markComplete.
-      getNext returns undefined when empty and does not dequeue.
-      Do not invent helpers. Do not edit helpers. Run npm test before commit.
+      Extend tests/AgentController.test.ts with tests for the key failure paths
+      that are currently untested. FIRST read_file src/agent/AgentController.ts to
+      understand the loop, then read_file tests/AgentController.test.ts for the
+      existing passing smoke test pattern.
+
+      Add tests for:
+      1. Max-iterations bail-out: set limits.maxIterations to a small number (e.g. 5)
+         and supply enough chatResponses to exhaust it — expect result.success === false
+         and result.failureReason to match /max iterations/i.
+      2. Cancelled early: supply a shouldStop callback that returns true immediately;
+         expect result.success === false and failureReason to match /cancelled/i.
+      3. Coding mode success: use mode 'coding', supply chatResponses that write a file
+         and commit. Because the worktree is a real git repo, you can assert
+         result.success === true.
+
+      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedMinimalRun,
+      db.updateTask(taskId, { mode: '...' }), createMockOllama, createTestAppConfig,
+      removeTempGitRepo / db.close() in afterEach.
+      logDir must be created with fs.mkdirSync before constructing AgentController.
+      Do NOT edit helpers. Run npm test before committing.
     mode: coding
     priority: 10
 
-  - title: Verify suite after TaskQueue tests
+  - title: ContextManager checkpoint round-trip tests
     description: |
-      Run npm test. If green, complete without inventing files. Fix only TaskQueue-related failures.
-    mode: testing
+      Add tests/ContextManager.test.ts.
+      FIRST read_file src/agent/ContextManager.ts.
+
+      Cover:
+      1. saveCheckpoint persists state to the database and loadFromCheckpoint restores
+         it — use openTempDatabase(repo.repoPath) + seedMinimalRun for a real db.
+      2. addDecision, addFileExamined, addFileChanged append without duplicates.
+      3. incrementIteration increments the counter; getIteration returns it.
+      4. setPriorHandoff / getPriorHandoff round-trip.
+
+      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedMinimalRun,
+      removeTempGitRepo / db.close() in afterEach.
+      Do NOT edit helpers. Run npm test before committing.
+    mode: coding
     priority: 9
+
+  - title: OllamaClient retry and error-handling tests
+    description: |
+      Add tests/OllamaClient.test.ts (or extend if it already exists).
+      FIRST read_file src/ollama/OllamaClient.ts and any existing OllamaClient tests.
+
+      Cover (without hitting real Ollama — use in-test http stubs or createMockOllama):
+      1. healthCheck returns ok:false when the server is unreachable (pass a bogus
+         baseUrl with a short timeout if the class accepts one, or test the parsing
+         logic on the response object).
+      2. chat retries on transient failures — if the class retries internally, confirm
+         the retry count; if not, test that a single call with a good response resolves.
+      3. The asChatResponse / response-parsing path with a non-string content body.
+
+      Do not spin up a real Ollama server. Prefer testing the pure logic paths.
+      createMockOllama is in tests/helpers/mockOllama.ts.
+      Do NOT edit helpers. Run npm test before committing.
+    mode: coding
+    priority: 8
+
+  - title: Verify suite and coverage delta
+    description: |
+      Run npm test and npm run test:coverage. Record the new statement coverage
+      percentage in a brief update to tests/coverage-summary.md. Do not invent new
+      test files or rewrite helpers — only fix real failures from prior tasks.
+      Complete (without committing) if the suite is already green.
+    mode: testing
+    priority: 7
