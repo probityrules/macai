@@ -43,6 +43,40 @@ describe("OllamaClient", () => {
     expect(health.error).toMatch(/not found/i);
   });
 
+  it("healthCheck fails on unreachable URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Failed to fetch");
+      }),
+    );
+
+    const client = new OllamaClient(config);
+    const health = await client.healthCheck();
+    expect(health.ok).toBe(false);
+    expect(health.error).toBeDefined();
+  });
+
+  it("chat with successful JSON response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          message: { role: "assistant", content: "Hello there!" },
+          done: true,
+        }),
+      })),
+    );
+
+    const client = new OllamaClient(config);
+    const response = await client.chat([{ role: "user", content: "hi" }]);
+    
+    expect(response.message.content).toBe("Hello there!");
+    expect(response.done).toBe(true);
+  });
+
   it("chat retries on transient 500 EOF then succeeds", async () => {
     let chatCalls = 0;
     vi.stubGlobal(
