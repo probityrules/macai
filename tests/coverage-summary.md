@@ -1,18 +1,18 @@
 # Coverage Summary
 
 ## Test Status
-- All tests passing: 116 passed (27 test files)
+- All tests passing: 123 passed (28 test files)
 
 ## Coverage Report
-- Statements: 42.96% (894/2081)
-- Branches: 35.18% (468/1330) 
-- Functions: 62.54% (192/307)
-- Lines: 43.38% (852/1964)
+- Statements: 43.83% (914/2085)
+- Branches: 35.7% (477/1336) 
+- Functions: 65.14% (200/307)
+- Lines: 44.25% (871/1968)
 
 ## Key Metrics
-- Overall coverage is currently at 42.96% statements
-- Branch coverage is at 35.18%
-- Function coverage is at 62.54%
-- Line coverage is at 43.38%
+- Overall coverage is currently at 43.83% statements
+- Branch coverage is at 35.7%
+- Function coverage is at 65.14%
+- Line coverage is at 44.25%
 
 This represents the current state of test coverage for the macai project.
