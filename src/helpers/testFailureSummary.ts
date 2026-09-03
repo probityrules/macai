@@ -57,7 +57,7 @@ export function buildTestFixHints(output: string): string[] {
   }
   if (/AgentController/i.test(output)) {
     hints.push(
-      "Use createTestAppConfig() from tests/helpers/tempMacaiRepo.ts for AppConfig (nested ollama/limits/shell/paths). Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' }). Provide several createMockOllama chatResponses.",
+      "AgentController tests: use createTestAppConfig() from tests/helpers/tempMacaiRepo. Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' or 'coding' }). For coding mode, the agent runs real shell commands in the worktree — avoid testing 'coding mode with file changes and commit' this way; instead test: (1) investigation success, (2) max-iterations bail-out (set limits.maxIterations: 5 and supply ~10 responses), (3) shouldStop callback returns true (expect failureReason /cancelled/i). Those three paths are safe without real tool execution.",
     );
   }
   if (/JobManager\.createJobManager is not a function/i.test(output) || /createJobManager/i.test(output)) {
