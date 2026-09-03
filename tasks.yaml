@@ -4,18 +4,20 @@ tasks:
       Extend tests/AgentController.test.ts with TWO new tests. Keep the existing
       investigation-mode success test intact.
 
-      FIRST read_file src/agent/AgentController.ts (look at the loop around
-      shouldStop and maxIterations) and tests/AgentController.test.ts.
+      FIRST read_file src/agent/AgentController.ts around shouldStop and
+      maxIterations (lines ~100-110), then read_file tests/AgentController.test.ts.
 
-      Test 1 — cancelled: pass shouldStop: () => true on the context. Expect
-      result.success === false and /cancelled/i.test(result.failureReason).
+      Test 1 — cancelled:
+        Pass shouldStop: () => true on AgentRunContext.
+        Expect result.success === false and result.failureReason === 'Cancelled'.
 
-      Test 2 — max-iterations: set limits.maxIterations: 2 in createTestAppConfig
-      and supply 10 chatResponses. Expect result.success === false and
-      /max iterations/i.test(result.failureReason).
+      Test 2 — max-iterations:
+        IMPORTANT: set limits.maxIterations: 0 in createTestAppConfig.
+        Iteration starts at 0, so 0 >= 0 fires immediately at the top of the loop.
+        Do NOT use maxIterations: 2 — investigation mode finishes before hitting it.
+        Expect result.success === false and result.failureReason === 'Max iterations exceeded'.
 
-      DO NOT add a coding-mode success test. Coding mode runs real git/npm in
-      the worktree and will fail under a mock LLM.
+      DO NOT add a coding-mode success test.
 
       Pattern:
         const repo = createTempGitRepo();
@@ -26,45 +28,7 @@ tasks:
         fs.mkdirSync(logDir, { recursive: true });
         afterEach: db.close(); removeTempGitRepo(repo);
 
-      Use createMockOllama, createTestAppConfig. Do NOT edit helpers.
-      Run npm test before committing.
-    mode: coding
-    priority: 10
-
-  - title: ContextManager checkpoint round-trip tests
-    description: |
-      Add tests/ContextManager.test.ts.
-      FIRST read_file src/agent/ContextManager.ts — match the REAL method names
-      (saveCheckpoint, loadFromCheckpoint, addDecision, addFileExamined,
-      addFileChanged, incrementIteration, getIteration, setPriorHandoff,
-      getPriorHandoff, setPhase, setPlan).
-
-      Cover:
-      1. saveCheckpoint persists; loadFromCheckpoint restores (use a real
-         sqlite via openTempDatabase(repo.repoPath) + seedMinimalRun).
-      2. addFileExamined / addFileChanged do not duplicate the same path.
-      3. incrementIteration / getIteration round-trip.
-      4. setPriorHandoff / getPriorHandoff round-trip.
-
-      Pattern: createTempGitRepo, openTempDatabase(repo.repoPath),
-      seedMinimalRun, db.close() + removeTempGitRepo in afterEach.
+      Use createMockOllama, createTestAppConfig({ limits: { maxIterations: 0 } }).
       Do NOT edit helpers. Run npm test before committing.
     mode: coding
-    priority: 9
-
-  - title: OllamaClient retry and error-handling tests
-    description: |
-      FIRST read_file src/ollama/OllamaClient.ts AND tests/OllamaClient.test.ts
-      (it already exists). Extend it, do not replace it.
-
-      Cover, using in-test fetch stubs (not a live Ollama, not createMockOllama):
-      1. healthCheck on an unreachable URL (use 127.0.0.1:1 or a closed port)
-         returns { ok: false }.
-      2. chat with a successful JSON body parsed into { message: { content } }.
-      3. If the class has a retry loop, verify it eventually succeeds after
-         a 500 then a 200 (use a tiny local http.Server on a random port).
-
-      Do not rewrite existing tests. Do NOT edit helpers. Run npm test
-      before committing.
-    mode: coding
-    priority: 8
+    priority: 10

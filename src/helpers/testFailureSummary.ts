@@ -57,7 +57,7 @@ export function buildTestFixHints(output: string): string[] {
   }
   if (/AgentController/i.test(output)) {
     hints.push(
-      "AgentController tests: use createTestAppConfig() from tests/helpers/tempMacaiRepo. Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' or 'coding' }). For coding mode, the agent runs real shell commands in the worktree — avoid testing 'coding mode with file changes and commit' this way; instead test: (1) investigation success, (2) max-iterations bail-out (set limits.maxIterations: 5 and supply ~10 responses), (3) shouldStop callback returns true (expect failureReason /cancelled/i). Those three paths are safe without real tool execution.",
+      "AgentController tests: use createTestAppConfig() from tests/helpers/tempMacaiRepo. Ensure logDir exists (fs.mkdirSync). seedMinimalRun then db.updateTask(..., { mode: 'investigation' }). Do NOT add a coding-mode success test. For max-iterations, set limits.maxIterations: 0 (iteration starts at 0; 0 >= 0 fires immediately). maxIterations: 2 is too high — investigation mode finishes before hitting it. For cancelled, pass shouldStop: () => true (failureReason is exactly 'Cancelled').",
     );
   }
   if (/JobManager\.createJobManager is not a function/i.test(output) || /createJobManager/i.test(output)) {
