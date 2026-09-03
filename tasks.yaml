@@ -1,71 +1,70 @@
 tasks:
-  - title: AgentController failure-path tests
+  - title: AgentController cancelled and max-iterations tests
     description: |
-      Extend tests/AgentController.test.ts with tests for the key failure paths
-      that are currently untested. FIRST read_file src/agent/AgentController.ts to
-      understand the loop, then read_file tests/AgentController.test.ts for the
-      existing passing smoke test pattern.
+      Extend tests/AgentController.test.ts with TWO new tests. Keep the existing
+      investigation-mode success test intact.
 
-      Add tests for:
-      1. Max-iterations bail-out: set limits.maxIterations to a small number (e.g. 5)
-         and supply enough chatResponses to exhaust it — expect result.success === false
-         and result.failureReason to match /max iterations/i.
-      2. Cancelled early: supply a shouldStop callback that returns true immediately;
-         expect result.success === false and failureReason to match /cancelled/i.
-      3. Coding mode success: use mode 'coding', supply chatResponses that write a file
-         and commit. Because the worktree is a real git repo, you can assert
-         result.success === true.
+      FIRST read_file src/agent/AgentController.ts (look at the loop around
+      shouldStop and maxIterations) and tests/AgentController.test.ts.
 
-      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedMinimalRun,
-      db.updateTask(taskId, { mode: '...' }), createMockOllama, createTestAppConfig,
-      removeTempGitRepo / db.close() in afterEach.
-      logDir must be created with fs.mkdirSync before constructing AgentController.
-      Do NOT edit helpers. Run npm test before committing.
+      Test 1 — cancelled: pass shouldStop: () => true on the context. Expect
+      result.success === false and /cancelled/i.test(result.failureReason).
+
+      Test 2 — max-iterations: set limits.maxIterations: 2 in createTestAppConfig
+      and supply 10 chatResponses. Expect result.success === false and
+      /max iterations/i.test(result.failureReason).
+
+      DO NOT add a coding-mode success test. Coding mode runs real git/npm in
+      the worktree and will fail under a mock LLM.
+
+      Pattern:
+        const repo = createTempGitRepo();
+        const db = openTempDatabase(repo.repoPath);
+        const { taskId } = seedMinimalRun(db, repo.repoPath);
+        db.updateTask(taskId, { mode: 'investigation' });
+        const logDir = path.join(repo.repoPath, 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        afterEach: db.close(); removeTempGitRepo(repo);
+
+      Use createMockOllama, createTestAppConfig. Do NOT edit helpers.
+      Run npm test before committing.
     mode: coding
     priority: 10
 
   - title: ContextManager checkpoint round-trip tests
     description: |
       Add tests/ContextManager.test.ts.
-      FIRST read_file src/agent/ContextManager.ts.
+      FIRST read_file src/agent/ContextManager.ts — match the REAL method names
+      (saveCheckpoint, loadFromCheckpoint, addDecision, addFileExamined,
+      addFileChanged, incrementIteration, getIteration, setPriorHandoff,
+      getPriorHandoff, setPhase, setPlan).
 
       Cover:
-      1. saveCheckpoint persists state to the database and loadFromCheckpoint restores
-         it — use openTempDatabase(repo.repoPath) + seedMinimalRun for a real db.
-      2. addDecision, addFileExamined, addFileChanged append without duplicates.
-      3. incrementIteration increments the counter; getIteration returns it.
+      1. saveCheckpoint persists; loadFromCheckpoint restores (use a real
+         sqlite via openTempDatabase(repo.repoPath) + seedMinimalRun).
+      2. addFileExamined / addFileChanged do not duplicate the same path.
+      3. incrementIteration / getIteration round-trip.
       4. setPriorHandoff / getPriorHandoff round-trip.
 
-      Use createTempGitRepo, openTempDatabase(repo.repoPath), seedMinimalRun,
-      removeTempGitRepo / db.close() in afterEach.
+      Pattern: createTempGitRepo, openTempDatabase(repo.repoPath),
+      seedMinimalRun, db.close() + removeTempGitRepo in afterEach.
       Do NOT edit helpers. Run npm test before committing.
     mode: coding
     priority: 9
 
   - title: OllamaClient retry and error-handling tests
     description: |
-      Add tests/OllamaClient.test.ts (or extend if it already exists).
-      FIRST read_file src/ollama/OllamaClient.ts and any existing OllamaClient tests.
+      FIRST read_file src/ollama/OllamaClient.ts AND tests/OllamaClient.test.ts
+      (it already exists). Extend it, do not replace it.
 
-      Cover (without hitting real Ollama — use in-test http stubs or createMockOllama):
-      1. healthCheck returns ok:false when the server is unreachable (pass a bogus
-         baseUrl with a short timeout if the class accepts one, or test the parsing
-         logic on the response object).
-      2. chat retries on transient failures — if the class retries internally, confirm
-         the retry count; if not, test that a single call with a good response resolves.
-      3. The asChatResponse / response-parsing path with a non-string content body.
+      Cover, using in-test fetch stubs (not a live Ollama, not createMockOllama):
+      1. healthCheck on an unreachable URL (use 127.0.0.1:1 or a closed port)
+         returns { ok: false }.
+      2. chat with a successful JSON body parsed into { message: { content } }.
+      3. If the class has a retry loop, verify it eventually succeeds after
+         a 500 then a 200 (use a tiny local http.Server on a random port).
 
-      Do not spin up a real Ollama server. Prefer testing the pure logic paths.
-      createMockOllama is in tests/helpers/mockOllama.ts.
-      Do NOT edit helpers. Run npm test before committing.
+      Do not rewrite existing tests. Do NOT edit helpers. Run npm test
+      before committing.
     mode: coding
     priority: 8
-
-  - title: Verify suite and coverage delta
-    description: |
-      Run npm test and npm run test:coverage. Record the new statement coverage
-      percentage in a brief update to tests/coverage-summary.md. Do not invent new
-      test files or rewrite helpers — only fix real failures from prior tasks.
-      Complete (without committing) if the suite is already green.
-    mode: testing
-    priority: 7
