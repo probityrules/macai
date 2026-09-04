@@ -70,6 +70,11 @@ export function buildTestFixHints(output: string): string[] {
       "Do not use require() or constructor spies under ESM/vitest. Prefer lightweight recoverIncomplete cases that need no WorktreeManager mock.",
     );
   }
+  if (/ShellGuardError|Path traversal not allowed/i.test(output)) {
+    hints.push(
+      "ShellGuard.validatePath throws ShellGuardError for path traversal — assert with expect(() => tool.execute(...)).rejects.toThrow(/Path traversal/) (or try/catch), do not expect a JSON { error } return.",
+    );
+  }
   if (/enqueueAll|TaskDefinition/i.test(output)) {
     hints.push("enqueueAll takes TaskDefinition[] with title/description/mode/priority — not arbitrary { id, type, status } objects.");
   }
