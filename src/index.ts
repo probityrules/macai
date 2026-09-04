@@ -296,7 +296,7 @@ program
   .description("Check Ollama, git, and model availability")
   .option("--repo <path>", "Path to verify git repository", DEFAULT_REPO)
   .option("--ollama-url <url>", `Ollama base URL (overrides config; default ${DEFAULT_OLLAMA_BASE_URL})`)
-  .option("--model <name>", "Model to check", "qwen3-coder:latest")
+  .option("--model <name>", "Model to check (overrides config)")
   .action(async (opts) => {
     console.log("\nmacai Doctor");
     console.log("────────────────");

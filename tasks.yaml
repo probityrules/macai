@@ -1,34 +1,74 @@
 tasks:
-  - title: AgentController cancelled and max-iterations tests
+  - title: Expand FileTools coverage for edit/list/path edges
     description: |
-      Extend tests/AgentController.test.ts with TWO new tests. Keep the existing
-      investigation-mode success test intact.
+      Extend tests/FileTools.test.ts (do not rewrite from scratch).
+      FIRST read_file src/tools/FileTools.ts and tests/FileTools.test.ts.
 
-      FIRST read_file src/agent/AgentController.ts around shouldStop and
-      maxIterations (lines ~100-110), then read_file tests/AgentController.test.ts.
+      Add tests covering currently weak paths:
+      1. write_file creates a new file and overwrites an existing one
+      2. edit_file replaces a unique string; returns an error when old_string
+         is missing or not unique
+      3. list_directory returns entries for an existing dir and errors for
+         a missing path
+      4. read_file / write_file reject paths outside the worktree (path
+         traversal via ../) if ShellGuard validates them
+      5. read-only mode: write_file and edit_file return errors when
+         ctx.readOnly is true
 
-      Test 1 — cancelled:
-        Pass shouldStop: () => true on AgentRunContext.
-        Expect result.success === false and result.failureReason === 'Cancelled'.
-
-      Test 2 — max-iterations:
-        IMPORTANT: set limits.maxIterations: 0 in createTestAppConfig.
-        Iteration starts at 0, so 0 >= 0 fires immediately at the top of the loop.
-        Do NOT use maxIterations: 2 — investigation mode finishes before hitting it.
-        Expect result.success === false and result.failureReason === 'Max iterations exceeded'.
-
-      DO NOT add a coding-mode success test.
-
-      Pattern:
-        const repo = createTempGitRepo();
-        const db = openTempDatabase(repo.repoPath);
-        const { taskId } = seedMinimalRun(db, repo.repoPath);
-        db.updateTask(taskId, { mode: 'investigation' });
-        const logDir = path.join(repo.repoPath, 'logs');
-        fs.mkdirSync(logDir, { recursive: true });
-        afterEach: db.close(); removeTempGitRepo(repo);
-
-      Use createMockOllama, createTestAppConfig({ limits: { maxIterations: 0 } }).
-      Do NOT edit helpers. Run npm test before committing.
+      Follow the existing FileTools.test.ts pattern (tmpDir, AppConfigSchema,
+      createFileTools, ShellGuard). Do NOT edit helpers.
+      Run npm test before committing.
     mode: coding
     priority: 10
+
+  - title: Add TestTools and ToolRegistry unit tests
+    description: |
+      Add tests/TestTools.test.ts and/or extend coverage for ToolRegistry.
+      FIRST read_file src/tools/TestTools.ts and src/tools/ToolRegistry.ts.
+
+      Prefer small, focused tests:
+      - TestTools: run_tests invokes the configured repo.test command (use a
+        temp dir with a trivial package.json script, or stub ShellGuard run
+        if the existing pattern does that)
+      - ToolRegistry: register tools, execute a known tool by name, reject
+        unknown tools, and respect readOnly / retry budgets at a high level
+
+      Use createTempGitRepo or a plain tmpDir as appropriate.
+      Do NOT invent helpers. Do NOT edit tests/helpers/*.ts.
+      Run npm test before committing.
+    mode: coding
+    priority: 9
+
+  - title: Add WorktreeManager edge-case tests
+    description: |
+      Extend tests/WorktreeManager.test.ts (create if missing, else extend).
+      FIRST read_file src/git/WorktreeManager.ts and any existing WorktreeManager tests.
+
+      Cover:
+      1. createWorktree / removeWorktree round-trip on a temp git repo
+      2. getCurrentBranch / isWorkingTreeClean on a clean and dirty tree
+      3. getWorktreeStatus for a path that does not exist (expect a thrown
+         error or a structured failure — match the real API)
+
+      Use createTempGitRepo + removeTempGitRepo. Do NOT edit helpers.
+      Run npm test before committing.
+    mode: coding
+    priority: 8
+
+  - title: Investigation — remaining highest-ROI coverage gaps
+    description: |
+      After the coding tasks above, investigate what still has the worst
+      coverage among JobManager, src/cli/*, and AgentController coding-mode
+      paths. Produce a short investigation report with concrete next-task
+      recommendations (3–5 bullets). Do not modify production code.
+      Use read/search tools only.
+    mode: investigation
+    priority: 7
+
+  - title: Verify suite after tool-coverage tasks
+    description: |
+      Run npm test. If green, complete without inventing new files.
+      Only fix real failures introduced by prior tasks in this run.
+      Do not create noop verification tests.
+    mode: testing
+    priority: 6
