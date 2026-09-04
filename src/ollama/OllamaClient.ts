@@ -108,13 +108,15 @@ export class OllamaClient {
   async chat(
     messages: OllamaMessage[],
     tools?: OllamaTool[],
-    options?: { temperature?: number; retries?: number },
+    options?: { temperature?: number; retries?: number; timeoutMs?: number },
   ): Promise<ChatResponse> {
     const maxAttempts = Math.max(1, (options?.retries ?? 5));
-  let lastError: Error | undefined;
+    const timeoutMs = options?.timeoutMs ?? 600_000;
+    let lastError: Error | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       this.abortController = new AbortController();
+      const timeout = setTimeout(() => this.abortController?.abort(), timeoutMs);
 
       const body: Record<string, unknown> = {
         model: this.model,
@@ -137,6 +139,7 @@ export class OllamaClient {
           signal: this.abortController.signal,
         });
 
+        clearTimeout(timeout);
         this.abortController = null;
 
         if (!res.ok) {
@@ -152,8 +155,12 @@ export class OllamaClient {
 
         return (await res.json()) as ChatResponse;
       } catch (err) {
+        clearTimeout(timeout);
         this.abortController = null;
         const error = err instanceof Error ? err : new Error(String(err));
+        if (error.name === "AbortError") {
+          throw new Error(`Ollama chat timed out after ${timeoutMs}ms`);
+        }
         const msg = error.message;
         if (!isTransientOllamaFailure(0, msg) || attempt === maxAttempts) {
           throw error;

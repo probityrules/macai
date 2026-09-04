@@ -10,13 +10,16 @@ tasks:
          is missing or not unique
       3. list_directory returns entries for an existing dir and errors for
          a missing path
-      4. read_file / write_file reject paths outside the worktree (path
-         traversal via ../) if ShellGuard validates them
-      5. read-only mode: write_file and edit_file return errors when
+      4. Path traversal (../): ShellGuard.validatePath THROWS ShellGuardError —
+         assert with expect(tool.execute(...)).rejects.toThrow(/traversal/i).
+         Do NOT expect a JSON { error } return for path traversal (unlike
+         read-only mode, which returns JSON).
+      5. read-only mode: write_file and edit_file return JSON errors when
          ctx.readOnly is true
 
       Follow the existing FileTools.test.ts pattern (tmpDir, AppConfigSchema,
-      createFileTools, ShellGuard). Do NOT edit helpers.
+      createFileTools, ShellGuard). After a failed test cycle, call run_tests
+      before more edit_file loops. Do NOT edit helpers.
       Run npm test before committing.
     mode: coding
     priority: 10
