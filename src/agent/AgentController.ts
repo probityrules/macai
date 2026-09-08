@@ -92,7 +92,7 @@ export class AgentController {
     let testFixCycles = 0;
     let reviewRejectCycles = 0;
     let testsPassed = false;
-    const maxTestFixCycles = 8;
+    const maxTestFixCycles = 12;
     const maxReviewRejectCycles = 3;
 
     try {
@@ -531,6 +531,7 @@ export class AgentController {
     const filesChanged: string[] = [];
     let lastResponse = "";
     let idleNudges = opts?.forceMutatingTools ? 1 : 0;
+    let editsSinceRunTests = 0;
     const allTools = toolRegistry.getOllamaTools();
     let tools = allTools;
     const systemContent = getSystemPrompt(task.mode as TaskMode, phase);
@@ -544,6 +545,7 @@ export class AgentController {
 
     const recordPhase: AgentPhase = phase === "investigate" ? "work" : phase;
     const requiresMutatingTools = phase === "work";
+    const mutatingToolNames = ["write_file", "edit_file", "run_tests"];
 
     if (requiresMutatingTools) {
       messages.push({
@@ -555,6 +557,8 @@ export class AgentController {
           "You MUST call tools in this phase. Use write_file and/or edit_file to implement the deliverables.",
           "write_file requires BOTH path and content string parameters — never omit content.",
           "Put new Vitest files under tests/*.test.ts only.",
+          "After a few edits, call run_tests to verify — do not keep editing blindly.",
+          "Do NOT call git_commit in the work phase; commit happens after tests pass and review.",
           "Do not reply with text only. If something already exists, verify with list_directory/read_file, then create or update what is still missing.",
           "Ignore node_modules, coverage, and cache files — they are not task deliverables.",
           "Note: only root /sample-project/ is gitignored — files under templates/ are tracked.",
@@ -580,14 +584,29 @@ export class AgentController {
         }
       }
 
-      // After idle nudges with no writes, only offer mutating tools so the model
-      // cannot keep listing/reading forever.
+      // After idle nudges with no writes, only offer mutating tools (+ run_tests)
+      // so the model cannot keep listing/reading forever. Keep run_tests available
+      // during test-fix cycles so the agent can verify without more blind edits.
       if (requiresMutatingTools && filesChanged.length === 0 && idleNudges >= 1) {
-        tools = allTools.filter((t) =>
-          ["write_file", "edit_file"].includes(t.function.name),
-        );
+        tools = allTools.filter((t) => mutatingToolNames.includes(t.function.name));
+      } else if (requiresMutatingTools) {
+        tools = allTools.filter((t) => t.function.name !== "git_commit");
       } else {
         tools = allTools;
+      }
+
+      if (requiresMutatingTools && editsSinceRunTests >= 2) {
+        this.log(`iter ${iter} [${phase}]: (nudging to run_tests after ${editsSinceRunTests} edits)`);
+        messages.push({
+          role: "user",
+          content:
+            `You have made ${editsSinceRunTests} file edits without calling run_tests. ` +
+            "Call run_tests NOW to check whether the suite passes before more edits.",
+        });
+        editsSinceRunTests = 0;
+        tools = allTools.filter((t) =>
+          ["run_tests", "write_file", "edit_file", "read_file"].includes(t.function.name),
+        );
       }
 
       const iterationId = this.ctx.db.recordIteration({
@@ -636,6 +655,21 @@ export class AgentController {
         const args = call.function.arguments;
         const argHint = summarizeToolArgs(toolName, args);
         this.log(`iter ${iter} [${phase}]: ${toolName}${argHint}`);
+
+        if (requiresMutatingTools && toolName === "git_commit") {
+          const blocked = JSON.stringify({
+            error:
+              "git_commit is not allowed in the work phase. Finish edits, then wait for the test/review/commit phases.",
+          });
+          this.log(`  → git_commit blocked (work phase)`);
+          messages.push({
+            role: "tool",
+            content: blocked,
+            tool_name: toolName,
+          });
+          continue;
+        }
+
         const start = Date.now();
         const result = await toolRegistry.execute(toolName, args);
         const durationMs = Date.now() - start;
@@ -657,10 +691,14 @@ export class AgentController {
               const p = String(args.path);
               filesChanged.push(p);
               contextManager.addFileChanged(p);
+              editsSinceRunTests += 1;
             }
           } catch {
             // ignore parse errors
           }
+        }
+        if (toolName === "run_tests") {
+          editsSinceRunTests = 0;
         }
         if (toolName === "read_file" && args.path) {
           contextManager.addFileExamined(String(args.path));

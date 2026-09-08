@@ -1,11 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "../config/types.js";
-import type { ShellGuard } from "../security/ShellGuard.js";
+import { ShellGuardError, type ShellGuard } from "../security/ShellGuard.js";
 import type { ToolContext, ToolDefinition } from "./types.js";
 import { resolveWorktreePath } from "./ToolRegistry.js";
 
 const MAX_FILE_BYTES = 100_000;
+
+function pathGuardError(shellGuard: ShellGuard, filePath: string, worktreePath: string): string | null {
+  try {
+    shellGuard.validatePath(filePath, worktreePath);
+    return null;
+  } catch (err) {
+    if (err instanceof ShellGuardError) {
+      return JSON.stringify({ error: err.message });
+    }
+    throw err;
+  }
+}
 
 export function createFileTools(
   config: AppConfig,
@@ -27,7 +39,8 @@ export function createFileTools(
       },
       execute: async (args) => {
         const filePath = String(args.path);
-        shellGuard.validatePath(filePath, ctx.worktreePath);
+        const guard = pathGuardError(shellGuard, filePath, ctx.worktreePath);
+        if (guard) return guard;
         const resolved = resolveWorktreePath(ctx.worktreePath, filePath);
         if (!fs.existsSync(resolved)) {
           return JSON.stringify({ error: `File not found: ${filePath}` });
@@ -71,7 +84,8 @@ export function createFileTools(
               "write_file requires string content. Call again with both path and content parameters (do not omit content).",
           });
         }
-        shellGuard.validatePath(filePath, ctx.worktreePath);
+        const guard = pathGuardError(shellGuard, filePath, ctx.worktreePath);
+        if (guard) return guard;
         const resolved = resolveWorktreePath(ctx.worktreePath, filePath);
         fs.mkdirSync(path.dirname(resolved), { recursive: true });
         fs.writeFileSync(resolved, args.content, "utf8");
@@ -95,7 +109,8 @@ export function createFileTools(
         const filePath = String(args.path);
         const oldText = String(args.old_text);
         const newText = String(args.new_text);
-        shellGuard.validatePath(filePath, ctx.worktreePath);
+        const guard = pathGuardError(shellGuard, filePath, ctx.worktreePath);
+        if (guard) return guard;
         const resolved = resolveWorktreePath(ctx.worktreePath, filePath);
         if (!fs.existsSync(resolved)) {
           return JSON.stringify({ error: `File not found: ${filePath}` });
@@ -125,7 +140,8 @@ export function createFileTools(
       execute: async (args) => {
         const dirPath = String(args.path ?? ".");
         const maxEntries = Number(args.max_entries ?? 100);
-        shellGuard.validatePath(dirPath, ctx.worktreePath);
+        const guard = pathGuardError(shellGuard, dirPath, ctx.worktreePath);
+        if (guard) return guard;
         const resolved = resolveWorktreePath(ctx.worktreePath, dirPath);
         if (!fs.existsSync(resolved)) {
           return JSON.stringify({ error: `Directory not found: ${dirPath}` });
@@ -156,7 +172,8 @@ export function createFileTools(
         const pattern = String(args.pattern);
         const searchPath = String(args.path ?? ".");
         const glob = args.glob ? String(args.glob) : undefined;
-        shellGuard.validatePath(searchPath, ctx.worktreePath);
+        const guard = pathGuardError(shellGuard, searchPath, ctx.worktreePath);
+        if (guard) return guard;
         const resolved = resolveWorktreePath(ctx.worktreePath, searchPath);
         const results = searchInDir(resolved, ctx.worktreePath, pattern, glob, 50);
         return JSON.stringify({ matches: results, count: results.length });

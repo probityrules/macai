@@ -72,7 +72,7 @@ export function buildTestFixHints(output: string): string[] {
   }
   if (/ShellGuardError|Path traversal not allowed/i.test(output)) {
     hints.push(
-      "ShellGuard.validatePath throws ShellGuardError for path traversal — assert with expect(() => tool.execute(...)).rejects.toThrow(/Path traversal/) (or try/catch), do not expect a JSON { error } return.",
+      "FileTools return JSON { error } for path traversal (and other ShellGuard path failures). Parse the tool result and assert result.error matches /traversal/i — do not use rejects.toThrow for FileTools path checks.",
     );
   }
   if (/enqueueAll|TaskDefinition/i.test(output)) {

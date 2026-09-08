@@ -80,8 +80,9 @@ describe("FileTools", () => {
   });
 
   it("blocks path traversal via ShellGuard", async () => {
-    await expect(
-      tools.get("read_file")!.execute({ path: "../outside.txt" }),
-    ).rejects.toThrow(/traversal|escapes/i);
+    const result = JSON.parse(
+      await tools.get("read_file")!.execute({ path: "../outside.txt" }),
+    );
+    expect(result.error).toMatch(/traversal|escapes/i);
   });
 });
