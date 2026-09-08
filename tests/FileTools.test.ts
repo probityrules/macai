@@ -85,4 +85,25 @@ describe("FileTools", () => {
     );
     expect(result.error).toMatch(/traversal|escapes/i);
   });
+
+  it("refuses writes to tests/helpers", async () => {
+    const writeResult = JSON.parse(
+      await tools.get("write_file")!.execute({
+        path: "tests/helpers/tempMacaiRepo.ts",
+        content: "nope",
+      }),
+    );
+    expect(writeResult.error).toMatch(/helpers/i);
+
+    fs.mkdirSync(path.join(tmpDir, "tests", "helpers"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "tests", "helpers", "tempMacaiRepo.ts"), "orig");
+    const editResult = JSON.parse(
+      await tools.get("edit_file")!.execute({
+        path: "tests/helpers/tempMacaiRepo.ts",
+        old_text: "orig",
+        new_text: "changed",
+      }),
+    );
+    expect(editResult.error).toMatch(/helpers/i);
+  });
 });

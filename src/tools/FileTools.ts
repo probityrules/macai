@@ -7,6 +7,15 @@ import { resolveWorktreePath } from "./ToolRegistry.js";
 
 const MAX_FILE_BYTES = 100_000;
 
+function isProtectedTestHelper(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  return (
+    normalized === "tests/helpers" ||
+    normalized.startsWith("tests/helpers/") ||
+    /(^|\/)tests\/helpers\//.test(normalized)
+  );
+}
+
 function pathGuardError(shellGuard: ShellGuard, filePath: string, worktreePath: string): string | null {
   try {
     shellGuard.validatePath(filePath, worktreePath);
@@ -78,6 +87,12 @@ export function createFileTools(
         if (!filePath) {
           return JSON.stringify({ error: "write_file requires path" });
         }
+        if (isProtectedTestHelper(filePath)) {
+          return JSON.stringify({
+            error:
+              "Refusing to modify tests/helpers/* — import createTempGitRepo/openTempDatabase/seedRun from tests/helpers/tempMacaiRepo.ts as-is. Fix your test file instead.",
+          });
+        }
         if (typeof args.content !== "string") {
           return JSON.stringify({
             error:
@@ -107,6 +122,12 @@ export function createFileTools(
       execute: async (args) => {
         if (readOnly) return JSON.stringify({ error: "Write operations disabled in read-only mode" });
         const filePath = String(args.path);
+        if (isProtectedTestHelper(filePath)) {
+          return JSON.stringify({
+            error:
+              "Refusing to modify tests/helpers/* — import createTempGitRepo/openTempDatabase/seedRun from tests/helpers/tempMacaiRepo.ts as-is. Fix your test file instead.",
+          });
+        }
         const oldText = String(args.old_text);
         const newText = String(args.new_text);
         const guard = pathGuardError(shellGuard, filePath, ctx.worktreePath);

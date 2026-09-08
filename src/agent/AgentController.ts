@@ -692,6 +692,13 @@ export class AgentController {
               filesChanged.push(p);
               contextManager.addFileChanged(p);
               editsSinceRunTests += 1;
+            } else if (toolName === "edit_file" && parsed.error) {
+              messages.push({
+                role: "user",
+                content:
+                  `edit_file failed: ${parsed.error}. Prefer write_file with the FULL updated file content ` +
+                  `(read_file first if needed) instead of another edit_file with a fragile old_text match.`,
+              });
             }
           } catch {
             // ignore parse errors
