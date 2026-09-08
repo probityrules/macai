@@ -2,24 +2,26 @@ tasks:
   - title: Expand FileTools coverage for edit/list/path edges
     description: |
       Extend tests/FileTools.test.ts (do not rewrite from scratch).
-      FIRST read_file src/tools/FileTools.ts and tests/FileTools.test.ts.
+      FIRST read_file tests/FileTools.test.ts and COPY its patterns exactly:
+        tools.get("write_file")!.execute({ path: "out.txt", content: "data" })
+        tools.get("edit_file")!.execute({ path, old_text, new_text })
+        JSON.parse(await tools.get(...)!.execute(...))
+      Do NOT invent tool.execute({ command, args }). Do NOT use old_string.
+      Do NOT import from "../helpers/..." — helpers are "./helpers/tempMacaiRepo"
+      but this file does NOT need tempMacaiRepo; keep AppConfigSchema + ShellGuard
+      + createFileTools like the existing tests.
+      tests/helpers/* writes are blocked — never touch them.
 
-      Add tests covering currently weak paths:
-      1. write_file creates a new file and overwrites an existing one
-      2. edit_file replaces a unique string; returns an error when old_string
-         is missing or not unique
-      3. list_directory returns entries for an existing dir and errors for
-         a missing path
-      4. Path traversal (../): FileTools returns JSON { error: "Path traversal..." }.
-         Assert with JSON.parse(await tool.execute(...)).error matching /traversal/i.
-         Do NOT use rejects.toThrow for FileTools path checks.
-      5. read-only mode: write_file and edit_file return JSON errors when
-         ctx.readOnly is true
+      Add tests for:
+      1. write_file overwrite of an existing file
+      2. edit_file unique replace; error when old_text missing or not unique
+      3. list_directory entries + missing path error
+      4. path traversal ../ → JSON { error } matching /traversal/i
+      5. read-only write/edit JSON errors (already covered — keep those tests)
 
-      Follow the existing FileTools.test.ts pattern (tmpDir, AppConfigSchema,
-      createFileTools, ShellGuard). After edits, call run_tests before more
-      edit_file loops. Do NOT call git_commit during work — commit is later.
-      Do NOT edit helpers. Run npm test before committing.
+      Prefer write_file with the FULL file when adding several tests at once.
+      Call run_tests after edits. No git_commit in work phase.
+      Run npm test before committing.
     mode: coding
     priority: 10
 
