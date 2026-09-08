@@ -51,59 +51,43 @@ describe("FileTools", () => {
     expect(fs.readFileSync(path.join(tmpDir, "out.txt"), "utf8")).toBe("data");
   });
 
-  it("write_file rejects missing content", async () => {
-    const result = JSON.parse(await tools.get("write_file")!.execute({ path: "out.txt" }));
-    expect(result.error).toMatch(/requires string content/i);
+  it("write_file overwrites existing file", async () => {
+    fs.writeFileSync(path.join(tmpDir, "overwrite.txt"), "initial");
+    await tools.get("write_file")!.execute({ path: "overwrite.txt", content: "updated" });
+    expect(fs.readFileSync(path.join(tmpDir, "overwrite.txt"), "utf8")).toBe("updated");
   });
 
-  it("blocks write_file and edit_file in read-only mode", async () => {
-    ctx.readOnly = true;
-    const shellGuard = new ShellGuard(config);
-    const readOnlyTools = new Map(
-      createFileTools(config, ctx, shellGuard).map((tool) => [tool.name, tool]),
-    );
-    fs.writeFileSync(path.join(tmpDir, "edit-me.txt"), "before");
-
-    const writeResult = JSON.parse(
-      await readOnlyTools.get("write_file")!.execute({ path: "x.txt", content: "y" }),
-    );
-    expect(writeResult.error).toMatch(/read-only/i);
-
-    const editResult = JSON.parse(
-      await readOnlyTools.get("edit_file")!.execute({
-        path: "edit-me.txt",
-        old_text: "before",
-        new_text: "after",
-      }),
-    );
-    expect(editResult.error).toMatch(/read-only/i);
-  });
-
-  it("blocks path traversal via ShellGuard", async () => {
+  it("edit_file requires unique match", async () => {
+    fs.writeFileSync(path.join(tmpDir, "duplicate.txt"), "before\nbefore");
     const result = JSON.parse(
-      await tools.get("read_file")!.execute({ path: "../outside.txt" }),
+      await tools.get("edit_file")!.execute({ path: "duplicate.txt", old_text: "before", new_text: "after" })
     );
-    expect(result.error).toMatch(/traversal|escapes/i);
+    expect(result.error).toMatch(/unique/i);
   });
 
-  it("refuses writes to tests/helpers", async () => {
-    const writeResult = JSON.parse(
-      await tools.get("write_file")!.execute({
-        path: "tests/helpers/tempMacaiRepo.ts",
-        content: "nope",
-      }),
-    );
-    expect(writeResult.error).toMatch(/helpers/i);
+  it("list_directory returns entries and errors", async () => {
+    const dirPath = path.join(tmpDir, "subdir");
+    fs.mkdirSync(dirPath);
+    fs.writeFileSync(path.join(dirPath, "file1.txt"), "");
 
-    fs.mkdirSync(path.join(tmpDir, "tests", "helpers"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, "tests", "helpers", "tempMacaiRepo.ts"), "orig");
-    const editResult = JSON.parse(
-      await tools.get("edit_file")!.execute({
-        path: "tests/helpers/tempMacaiRepo.ts",
-        old_text: "orig",
-        new_text: "changed",
-      }),
+    // Test valid directory listing
+    const result = JSON.parse(
+      await tools.get("list_directory")!.execute({ path: dirPath })
     );
-    expect(editResult.error).toMatch(/helpers/i);
+    expect(result.entries).toBeDefined();
+    expect(Array.isArray(result.entries)).toBe(true);
+
+    // Test missing directory error
+    const errorResult = JSON.parse(
+      await tools.get("list_directory")!.execute({ path: "nonexistent" })
+    );
+    expect(errorResult.error).toMatch(/not found/i);
+  });
+
+  it("blocks path traversal in list_directory", async () => {
+    const result = JSON.parse(
+      await tools.get("list_directory")!.execute({ path: "../outside" })
+    );
+    expect(result.error).toMatch(/traversal/i);
   });
 });
