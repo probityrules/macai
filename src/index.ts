@@ -18,6 +18,7 @@ import { runMacaiStart } from "./cli/runStart.js";
 import { runPromptCommand } from "./cli/promptCommand.js";
 import { runCleanupCommand } from "./cli/cleanupCommand.js";
 import { runReviewCommand } from "./cli/reviewCommand.js";
+import { runAcceptCommand, runAdoptCommand, runReturnCommand } from "./cli/adoptCommand.js";
 import { checkCoveragePackages } from "./helpers/doctor-checks.js";
 import { resolveRepo } from "./cli/repoOption.js";
 
@@ -28,7 +29,7 @@ const program = new Command();
 program
   .name("macai")
   .description("macai — local autonomous coding agent")
-  .version("0.1.4");
+  .version("0.1.7");
 
 program
   .command("start")
@@ -249,6 +250,52 @@ program
   .action(async (taskId: string, opts) => {
     try {
       await runReviewCommand(taskId, resolveRepo(opts.repo));
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("adopt")
+  .description(
+    "Bring a macai task branch into the current worktree as normal diffs (stash-pop style)",
+  )
+  .argument("[task-id]", "Task ID whose macai/<id> branch to adopt")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .option("--abort", "Discard adopted diffs and restore the pre-adopt worktree")
+  .action(async (taskId: string | undefined, opts) => {
+    try {
+      await runAdoptCommand(resolveRepo(opts.repo), taskId, { abort: opts.abort === true });
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("return")
+  .description(
+    "Write adopt edits back to the agent branch/worktree and restore a clean primary tree",
+  )
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .action(async (opts) => {
+    try {
+      await runReturnCommand(resolveRepo(opts.repo));
+    } catch (err) {
+      console.error("Error:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("accept")
+  .description("Commit adopted diffs onto the current branch and clear the adopt session")
+  .option("--repo <path>", "Path to the git repository", DEFAULT_REPO)
+  .option("-m, --message <msg>", "Commit message (default includes task id and branch)")
+  .action(async (opts) => {
+    try {
+      await runAcceptCommand(resolveRepo(opts.repo), { message: opts.message });
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);
       process.exit(1);

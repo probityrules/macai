@@ -1,5 +1,6 @@
 import type { AppConfig, JobStartOptions, TaskDefinition } from "../config/types.js";
 import { loadConfig, mergeConfig } from "../config/Config.js";
+import { assertNoAdoptState } from "../git/adoptState.js";
 import { JobManager } from "../queue/JobManager.js";
 
 export interface StartCommandOptions {
@@ -21,6 +22,8 @@ export async function runMacaiStart(opts: StartCommandOptions): Promise<void> {
     model: opts.model,
     ollamaUrl: opts.ollamaUrl,
   });
+
+  assertNoAdoptState(opts.repo, "start a run");
 
   await JobManager.recoverIncomplete(opts.repo);
 

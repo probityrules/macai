@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gitExecFile } from "../git/gitBinary.js";
+import { readAdoptState } from "../git/adoptState.js";
 import { WorktreeManager } from "../git/WorktreeManager.js";
 import { taskIdFromMacaiWorktree, taskIdFromTaskDir } from "../helpers/cleanup-helpers.js";
 import {
@@ -44,9 +45,23 @@ export async function runCleanupCommand(repoPath: string, options: CleanupOption
     olderThanDays: options.olderThanDays,
     taskStatusById,
   });
-  const orphanedWorktrees = summary.orphanedWorktrees;
-  const staleWorktreeDirs = summary.staleWorktreeDirs;
-  const tasksToPrune = pruneTasks ? summary.prunableTaskDirs : [];
+  const adopted = readAdoptState(repoPath);
+  if (adopted) {
+    console.log(
+      `Adopt session active for ${adopted.taskId} — skipping that task's worktree/branch until return/abort\n`,
+    );
+  }
+  const orphanedWorktrees = summary.orphanedWorktrees.filter((p) => {
+    const id = taskIdFromMacaiWorktree(p);
+    return !adopted || id !== adopted.taskId;
+  });
+  const staleWorktreeDirs = summary.staleWorktreeDirs.filter((p) => {
+    const id = taskIdFromMacaiWorktree(p);
+    return !adopted || id !== adopted.taskId;
+  });
+  const tasksToPrune = (pruneTasks ? summary.prunableTaskDirs : []).filter((dir) => {
+    return !adopted || taskIdFromTaskDir(dir) !== adopted.taskId;
+  });
   const baselineLogsToRemove = summary.prunableBaselineLogs;
 
   console.log(`Orphaned git worktrees (${orphanedWorktrees.length}):`);

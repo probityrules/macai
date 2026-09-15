@@ -89,6 +89,10 @@ Coding tasks create branches as `macai/<task-hash>`. Your primary working tree i
 | `macai doctor` | Health check |
 | `macai cleanup` | Remove stale worktrees, run baseline logs, and prune old task dirs |
 | `macai review <task-id>` | Inspect a task (status, branch, report preview) |
+| `macai adopt <task-id>` | Bring a task branch into the current worktree as normal diffs |
+| `macai accept` | Commit adopted diffs onto the current branch; remove worktree, branch, and task dir |
+| `macai return` | Write adopt edits back to the agent branch and restore a clean tree |
+| `macai adopt --abort` | Discard adopted diffs; leave the agent branch untouched |
 | `macai cancel` | Cancel instructions |
 
 ### Command Options
@@ -160,6 +164,22 @@ macai review <task-id> [--repo <path>]
 ```
 
 Prints task status, mode, branch, worktree path, investigation-report preview, and recent git info when a branch exists.
+
+#### `macai adopt` / `macai accept` / `macai return`
+```bash
+macai adopt <task-id>          # materialize macai/<task-id> as working-tree diffs
+macai accept                   # commit those diffs onto the current branch; end session
+macai accept -m "msg"          # same, with a custom commit message
+macai return                   # write local edits back to the agent branch, clean primary tree
+macai adopt --abort            # discard adopted diffs; agent branch/worktree unchanged
+macai adopt                    # show active adopt session, if any
+```
+
+Review agent work without checking out `macai/<task-id>` (that branch stays in the task worktree). Requires a clean primary worktree. While adopted, `macai start` is blocked and `cleanup` skips that task.
+
+- **`accept`** — land the reviewed (and optionally edited) tree on your current branch, then remove the task worktree, delete `macai/<task-id>`, and prune `.macai/tasks/<id>/`.
+- **`return`** — put edits back on the agent branch and restore a clean primary tree (stash-push style).
+- **`adopt --abort`** — discard the borrow; agent branch unchanged.
 
 ## Sample templates
 
