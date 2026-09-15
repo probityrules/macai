@@ -26,7 +26,7 @@ From inside your project directory ( `--repo` defaults to the current folder):
 macai doctor
 
 # Option A: explicit task file
-macai start --tasks tasks.yaml --hours 8
+macai start --tasks templates/tasks.example.yaml --hours 8
 
 # Option B: natural-language prompt (generates tasks.yaml, then runs)
 macai prompt "Add parser tests, review TODOs in src/, and improve API error handling."
@@ -103,7 +103,7 @@ macai start [options]
 ```
 
 Options:
-- `--tasks <file>` - Specify tasks file (default: `tasks.yaml`)
+- `--tasks <file>` - Specify tasks file (default: `tasks.yaml` in the repo root)
 - `--hours <number>` - Maximum runtime in hours (default: 8)
 - `--continue-on-failure` - Continue running after task failure
 - `--repo <path>` - Target repository path (default: current directory)
@@ -188,7 +188,7 @@ Example assets live under `templates/` (not repo root — `/sample-project/` at 
 - `templates/sample-project/` — minimal project for trying macai
 - `templates/tasks.example.yaml` — example task definitions
 
-Copy or point `--tasks` at the YAML when experimenting.
+Copy the example or pass `--tasks templates/tasks.example.yaml` when experimenting.
 
 ## Test coverage
 
