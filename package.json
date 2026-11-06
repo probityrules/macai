@@ -1,6 +1,6 @@
 {
   "name": "macai",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "macai — local autonomous coding agent with Ollama",
   "type": "module",
   "bin": {
@@ -15,7 +15,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "MIT",
   "dependencies": {

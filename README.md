@@ -4,7 +4,7 @@ Local autonomous coding agent using Ollama, Git worktrees, and a task queue.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Git 2.5+
 - Ollama server (default: `http://127.0.0.1:11434`)
 - Model: `qwen3-coder:latest`
